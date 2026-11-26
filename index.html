@@ -1,0 +1,2924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CleanMe LK — Sri Lanka PickMe-Style Live Cleaning Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              DEFAULT: '#2563EB',
+              dark: '#1D4ED8',
+              light: '#EFF6FF',
+              soft: '#DBEAFE',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #FFFFFF;
+      color: #0F172A;
+    }
+
+    #sriLankaLeafletMap {
+      width: 100%;
+      height: 460px;
+      z-index: 1;
+      background-color: #EFF6FF;
+      cursor: crosshair;
+    }
+
+    @media (min-width: 640px) {
+      #sriLankaLeafletMap {
+        height: 540px;
+      }
+    }
+
+    /* PickMe-style Live Map Pins & Pulsing Radar Animations */
+    @keyframes radarPulseBlue {
+      0% {
+        transform: translate(-50%, -50%) scale(0.75);
+        opacity: 0.85;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(2.4);
+        opacity: 0;
+      }
+    }
+
+    @keyframes riderBounce {
+      0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+      50% { transform: translate(-50%, -50%) translateY(-3px); }
+    }
+
+    .radar-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 34px;
+      height: 34px;
+      border-radius: 9999px;
+      background: rgba(37, 99, 235, 0.35);
+      border: 2px solid rgba(37, 99, 235, 0.65);
+      pointer-events: none;
+      animation: radarPulseBlue 2s infinite ease-out;
+    }
+
+    .radar-ring-dark {
+      background: rgba(15, 23, 42, 0.25);
+      border-color: rgba(37, 99, 235, 0.8);
+    }
+
+    .sl-map-pin-wrapper {
+      position: relative;
+      width: 0;
+      height: 0;
+    }
+
+    .sl-map-pin {
+      position: relative;
+      z-index: 2;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.2);
+      border: 2px solid #FFFFFF;
+      transform: translate(-50%, -50%);
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .sl-seller-pin {
+      background: #2563EB;
+      color: #FFFFFF;
+    }
+
+    .sl-seller-pin-selected {
+      background: #1D4ED8;
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.35), 0 8px 20px rgba(15, 23, 42, 0.28);
+    }
+
+    .sl-seller-pin-active-ride {
+      background: #1D4ED8;
+      animation: riderBounce 1.1s infinite ease-in-out;
+      box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.4), 0 10px 22px rgba(29, 78, 216, 0.35);
+    }
+
+    .sl-customer-pin {
+      background: #0F172A;
+      color: #FFFFFF;
+      cursor: grab;
+    }
+
+    .sl-customer-pin:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body class="bg-white text-slate-900 min-h-screen flex flex-col">
+
+  <!-- TOP HEADER (floating dark bar on desktop, full-width bar + hamburger menu on mobile) -->
+  <style>
+    .nav-link.is-active { color:#fff; background:rgba(255,255,255,.14); }
+    #mobileMenu { transition: max-height .3s ease, opacity .2s ease; max-height:0; opacity:0; overflow:hidden; }
+    #mobileMenu.open { max-height:80vh; opacity:1; overflow-y:auto; }
+  </style>
+  <header class="sticky top-0 z-40 sm:px-6 sm:pt-3 pb-0 sm:pb-1 pointer-events-none">
+    <div class="pointer-events-auto max-w-7xl mx-auto sm:rounded-2xl bg-slate-950/95 sm:bg-slate-900/90 backdrop-blur-md sm:border border-white/10 shadow-xl shadow-slate-900/20 text-white">
+      <div class="h-[68px] sm:h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <button type="button" onclick="navigateTo('home')" class="text-left focus:outline-none" aria-label="CleanMe.lk home">
+          <span class="font-extrabold text-[30px] sm:text-[28px] leading-none tracking-tight">Clean<span class="text-sky-400">Me</span><sup class="ml-0.5 text-[9px] font-bold text-white/60 align-super">.lk</sup></span>
+        </button>
+
+        <nav class="hidden lg:flex items-center gap-1 font-medium"><button type="button" data-nav="home" onclick="navigateTo('home')" class="nav-link px-3.5 py-2 rounded-xl text-[15px] tracking-wide text-white/75 hover:text-white hover:bg-white/10 transition whitespace-nowrap">Live Map</button><button type="button" data-nav="register" onclick="navigateTo('register')" class="nav-link px-3.5 py-2 rounded-xl text-[15px] tracking-wide text-white/75 hover:text-white hover:bg-white/10 transition whitespace-nowrap">Cleaners &amp; Partners</button><button type="button" data-nav="seller-admin" onclick="navigateTo('seller-admin')" class="nav-link px-3.5 py-2 rounded-xl text-[15px] tracking-wide text-white/75 hover:text-white hover:bg-white/10 transition whitespace-nowrap">Order Panel</button><button type="button" data-nav="web-admin" onclick="navigateTo('web-admin')" class="nav-link px-3.5 py-2 rounded-xl text-[15px] tracking-wide text-white/75 hover:text-white hover:bg-white/10 transition whitespace-nowrap">Web Admin</button></nav>
+
+        <div class="hidden lg:flex items-center gap-2">
+          <span id="currentSessionPill" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/10 text-white border border-white/15">
+            <i class="fa-solid fa-user"></i> Guest
+          </span>
+          <button type="button" onclick="navigateTo('login')" class="px-3.5 py-2 rounded-xl text-white/85 hover:text-white hover:bg-white/10 text-xs font-bold transition">Login</button>
+          <button type="button" onclick="navigateTo('register')" class="px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold transition">Register</button>
+        </div>
+
+        <!-- Hamburger (mobile / tablet) -->
+        <button type="button" id="hamburgerBtn" onclick="toggleMobileMenu()" aria-label="Open menu" aria-expanded="false"
+          class="lg:hidden w-11 h-11 rounded-full bg-sky-400 text-slate-950 flex items-center justify-center shadow-md active:scale-95 transition">
+          <span id="hamburgerIcon" class="flex flex-col gap-[6px]"><span class="block w-5 h-[2.5px] rounded bg-slate-950"></span><span class="block w-5 h-[2.5px] rounded bg-slate-950"></span></span>
+          <i id="hamburgerClose" class="fa-solid fa-xmark text-lg hidden"></i>
+        </button>
+      </div>
+
+      <!-- Mobile menu panel -->
+      <div id="mobileMenu" class="lg:hidden border-t border-white/10">
+        <div class="px-3 py-3 space-y-1">
+          <button type="button" data-nav="home" onclick="navigateTo('home')" class="nav-link w-full text-left px-4 py-3 rounded-xl text-base font-semibold text-white/80 hover:text-white">Live Map</button><button type="button" data-nav="register" onclick="navigateTo('register')" class="nav-link w-full text-left px-4 py-3 rounded-xl text-base font-semibold text-white/80 hover:text-white">Cleaners &amp; Partners</button><button type="button" data-nav="seller-admin" onclick="navigateTo('seller-admin')" class="nav-link w-full text-left px-4 py-3 rounded-xl text-base font-semibold text-white/80 hover:text-white">Order Panel</button><button type="button" data-nav="web-admin" onclick="navigateTo('web-admin')" class="nav-link w-full text-left px-4 py-3 rounded-xl text-base font-semibold text-white/80 hover:text-white">Web Admin</button>
+          <div class="grid grid-cols-2 gap-2 pt-3 mt-2 border-t border-white/10">
+            <button type="button" onclick="navigateTo('login')" class="py-3 rounded-xl border border-white/20 text-white text-sm font-bold">Login</button>
+            <button type="button" onclick="navigateTo('register')" class="py-3 rounded-xl bg-sky-400 text-slate-950 text-sm font-bold">Register</button>
+          </div>
+          <div class="text-center text-[11px] text-white/50 pt-2">Cleaner Reg Fee Rs. 250 • 20% commission</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- TOP RULE BANNER -->
+  <div class="bg-brand-light border-b border-blue-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-800">
+      <div class="font-semibold flex items-center gap-2">
+        <i class="fa-solid fa-satellite-dish text-brand"></i>
+        <span>
+          <strong>Live Cleaner Radar:</strong> Tap/drag pin on map or use GPS • <strong>Cleaner Reg Fee:</strong> <strong>Rs. 250 LKR</strong> • <strong>Order Commission:</strong> <strong>20%</strong> (Cash & Card)
+        </span>
+      </div>
+      <span id="dbSyncBadge" class="font-bold text-brand">Ready</span>
+    </div>
+  </div>
+
+  <!-- ALERT BANNER -->
+  <div id="alertBanner" class="hidden max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4">
+    <div id="alertBannerBox" class="rounded-2xl border px-4 py-3 text-sm font-medium flex items-center justify-between gap-3 bg-brand-light border-blue-200 text-slate-900">
+      <div class="flex items-center gap-2.5">
+        <i id="alertBannerIcon" class="fa-solid fa-circle-info text-brand"></i>
+        <span id="alertBannerText">Notification</span>
+      </div>
+      <button type="button" onclick="hideAlertBanner()" class="text-slate-500 hover:text-slate-800 p-1">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 0: LOGIN PORTAL (USER LOGIN / CLEANER LOGIN / WEB ADMIN LOGIN)   -->
+  <!-- ===================================================================== -->
+  <section id="view-login" class="hidden flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8">
+    <div class="mb-6">
+      <button type="button" onclick="navigateTo('home')" class="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1 mb-2">
+        <i class="fa-solid fa-arrow-left"></i> Back to Sri Lanka Live Map
+      </button>
+      <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Platform Login</h1>
+      <p class="text-sm text-slate-600 mt-1">
+        Choose your login role: <strong>User Login</strong>, <strong>Cleaner Login</strong> (opens your Order Admin Panel), or <strong>Web Admin Login</strong>.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <!-- 1. USER LOGIN -->
+      <form onsubmit="handleUserLogin(event)" class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-light text-brand">User Login</span>
+          <i class="fa-solid fa-user text-brand"></i>
+        </div>
+        <h2 class="font-bold text-base text-slate-900">Customer Login</h2>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Your Name *</label>
+          <input type="text" id="userLoginName" required placeholder="e.g. Kavindu Silva" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Phone / Email *</label>
+          <input type="text" id="userLoginContact" required placeholder="e.g. +94 77 000 1122" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+        </div>
+        <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-brand hover:bg-brand-dark text-white text-xs font-bold">
+          Login as User & Book
+        </button>
+      </form>
+
+      <!-- 2. CLEANER LOGIN -->
+      <form onsubmit="handleCleanerLogin(event)" class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-light text-brand">Cleaner Login</span>
+          <i class="fa-solid fa-broom text-brand"></i>
+        </div>
+        <h2 class="font-bold text-base text-slate-900">Cleaner Order Panel Login</h2>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Cleaner ID or Phone *</label>
+          <input type="text" id="cleanerLoginIdOrPhone" required placeholder="e.g. cln-1234 or +94 77..." class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Select Registered Cleaner</label>
+          <select id="cleanerLoginSelect" class="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-semibold"></select>
+        </div>
+        <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-brand hover:bg-brand-dark text-white text-xs font-bold">
+          Login to Cleaner Order Panel
+        </button>
+      </form>
+
+      <!-- 3. WEB ADMIN LOGIN -->
+      <form onsubmit="handleWebAdminLogin(event)" class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">Web Admin Login</span>
+          <i class="fa-solid fa-shield-halved text-slate-900"></i>
+        </div>
+        <h2 class="font-bold text-base text-slate-900">Web Admin Login</h2>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Admin Email *</label>
+          <input type="email" id="adminLoginEmail" required placeholder="Admin email" autocomplete="off" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Admin Passcode *</label>
+          <input type="password" id="adminLoginPass" required placeholder="Admin passcode" autocomplete="off" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+        </div>
+        <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold">
+          Login to Web Admin
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 1: CUSTOMER ORDERING & PICKME-STYLE LIVE SRI LANKA MAP           -->
+  <!-- ===================================================================== -->
+  <div id="view-home" class="flex-1">
+    <section class="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-9">
+      <div class="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-light text-brand border border-blue-200 text-xs font-bold mb-2">
+            <span class="w-2 h-2 rounded-full bg-brand animate-ping"></span>
+            PickMe-Style Live GPS Radar • Registered Free Cleaners Only
+          </span>
+          <h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+            Live Cleaner Tracking Across <span class="text-brand">Sri Lanka</span>
+          </h1>
+          <p class="text-sm sm:text-base text-slate-600 mt-1 max-w-2xl">
+            Click anywhere on the map, drag your pin, or tap <strong>Use My Live GPS</strong>. Watch nearby <strong>Free</strong> cleaners move live and track your assigned cleaner in real time.
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5 text-xs font-bold">
+          <div class="px-3.5 py-2 rounded-xl bg-brand-light border border-blue-200 text-brand flex items-center gap-1.5">
+            <i class="fa-solid fa-satellite-dish"></i>
+            <span id="freeCleanersCounter">0</span> Free Cleaners Live
+          </div>
+          <button type="button" onclick="navigateTo('register')" class="px-3.5 py-2 rounded-xl bg-brand hover:bg-brand-dark text-white transition shadow-sm">
+            + Register Cleaner
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- LEFT COLUMN: ORDER FORM & DIRECTORY -->
+        <div class="lg:col-span-5 space-y-5">
+          <div class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-4">
+            <div class="flex items-center justify-between border-b border-blue-100 pb-3">
+              <h2 class="font-bold text-lg text-slate-900">Place Cleaning Order</h2>
+              <span class="text-xs font-bold text-brand bg-brand-light px-2.5 py-1 rounded-full">20% Commission</span>
+            </div>
+
+            <div id="selectedCleanerBox" class="p-3.5 rounded-xl bg-brand-light border border-blue-200"></div>
+
+            <!-- Customer Pickup / Service Location + Live GPS Button -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <label for="customerAreaSelect" class="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Your Pickup / Service Pin
+                </label>
+                <button type="button" id="liveGpsBtn" onclick="useLiveGpsLocation()" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand text-white hover:bg-brand-dark text-[11px] font-bold shadow-sm transition">
+                  <i class="fa-solid fa-location-crosshairs"></i> Use My Live GPS
+                </button>
+              </div>
+
+              <!-- LocationIQ Sri Lanka Address Search Input (Autocomplete) -->
+              <div class="relative">
+                <div class="relative flex items-center">
+                  <i class="fa-solid fa-magnifying-glass text-brand text-xs absolute left-3.5 pointer-events-none"></i>
+                  <input
+                    type="text"
+                    id="slLocationSearchInput"
+                    oninput="handleLocationSearchInput(this.value)"
+                    onfocus="handleLocationSearchInput(this.value)"
+                    placeholder="Search Sri Lanka street, town or city (e.g. Kollupitiya, Kandy)..."
+                    autocomplete="off"
+                    class="w-full rounded-xl border border-blue-200 bg-white pl-9 pr-8 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:border-brand"
+                  />
+                  <button
+                    type="button"
+                    onclick="clearLocationSearch()"
+                    title="Clear search"
+                    class="absolute right-2.5 text-slate-400 hover:text-slate-700 text-xs p-1"
+                  >
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+                <div
+                  id="slLocationSearchResults"
+                  class="hidden absolute left-0 right-0 mt-1 bg-white border border-blue-200 rounded-xl shadow-lg max-h-56 overflow-y-auto z-[600] divide-y divide-blue-50"
+                ></div>
+              </div>
+
+              <select id="customerAreaSelect" onchange="handleCustomerAreaChange()" class="w-full rounded-xl border border-blue-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:border-brand"></select>
+              <div id="customPinCoordsBadge" class="text-[11px] font-semibold text-slate-600 flex items-center justify-between bg-brand-light/60 px-3 py-1.5 rounded-xl border border-blue-100">
+                <span class="truncate pr-2"><i class="fa-solid fa-map-pin text-brand mr-1"></i> Pin: <strong id="pinLabelText">Colombo</strong></span>
+                <span class="font-mono text-[10px] text-slate-500 shrink-0" id="pinCoordsText">6.9271, 79.8612</span>
+              </div>
+            </div>
+
+            <div id="etaRouteSummary" class="p-3 rounded-xl border border-blue-200 bg-brand-light/60 flex items-center justify-between text-xs">
+              <div>
+                <div class="font-bold text-slate-700">Estimated Cleaner Arrival</div>
+                <div id="etaMinutesText" class="text-base font-extrabold text-brand mt-0.5">-- mins away</div>
+              </div>
+              <div class="text-right">
+                <div class="font-bold text-slate-700">Live Route Distance</div>
+                <div id="distanceKmText" class="text-sm font-bold text-slate-900 mt-0.5">-- km</div>
+              </div>
+            </div>
+
+            <div>
+              <label for="orderServiceSelect" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                Service Category
+              </label>
+              <select id="orderServiceSelect" onchange="updateOrderSummary()" class="w-full rounded-xl border border-blue-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:border-brand">
+                <option value="Home Cleaning">Home Cleaning</option>
+                <option value="Sofa & Carpet">Sofa & Carpet Cleaning</option>
+                <option value="Office Cleaning">Office Cleaning</option>
+                <option value="Deep Cleaning">Deep Cleaning</option>
+              </select>
+            </div>
+
+            <div class="flex items-center justify-between p-3 rounded-xl border border-blue-100 bg-brand-light/40">
+              <div>
+                <div class="text-sm font-bold text-slate-900">Duration (Hours)</div>
+                <div class="text-xs text-slate-600">Calculated from cleaner's hourly rate</div>
+              </div>
+              <div class="flex items-center gap-2.5">
+                <button type="button" onclick="changeOrderHours(-1)" class="w-8 h-8 rounded-lg bg-white border border-blue-200 hover:border-brand text-brand font-bold flex items-center justify-center">-</button>
+                <span id="orderHoursValue" class="w-6 text-center font-extrabold text-base text-slate-900">2</span>
+                <button type="button" onclick="changeOrderHours(1)" class="w-8 h-8 rounded-lg bg-white border border-blue-200 hover:border-brand text-brand font-bold flex items-center justify-center">+</button>
+              </div>
+            </div>
+
+            <!-- Payment Method: Cash or Card -->
+            <div class="grid grid-cols-2 gap-2.5">
+              <button type="button" id="payCashBtn" onclick="setPaymentMethod('Cash')" class="py-2.5 px-3 rounded-xl border border-brand bg-brand text-white text-xs font-bold transition">
+                <i class="fa-solid fa-money-bill-wave mr-1"></i> Cash Payment
+              </button>
+              <button type="button" id="payCardBtn" onclick="setPaymentMethod('Card')" class="py-2.5 px-3 rounded-xl border border-blue-200 bg-white text-slate-700 hover:border-brand text-xs font-bold transition">
+                <i class="fa-regular fa-credit-card mr-1"></i> Card Payment
+              </button>
+            </div>
+
+            <div class="pt-3 border-t border-blue-100 space-y-2">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-xs text-slate-500 font-medium">Order Total</div>
+                  <div id="orderTotalPrice" class="text-2xl font-extrabold text-brand">Rs. 3,000</div>
+                </div>
+                <span id="orderRateNote" class="text-xs font-semibold text-slate-600 bg-brand-light px-2.5 py-1 rounded-lg">
+                  Rs. 1,500 / hr
+                </span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-brand-light/70 border border-blue-100 text-[11px] text-slate-700 flex items-center justify-between">
+                <span>20% Commission: <strong id="commission20Text" class="text-brand">Rs. 600</strong></span>
+                <span>Cleaner Payout (80%): <strong id="seller80Text" class="text-slate-900">Rs. 2,400</strong></span>
+              </div>
+              <p class="text-[11px] text-slate-600">
+                When the cleaner finishes the job and takes <strong>Cash</strong> or <strong>Card</strong> payment, <strong>20%</strong> goes as platform commission.
+              </p>
+            </div>
+
+            <button type="button" id="placeOrderBtn" onclick="placeCleaningOrder()" class="w-full py-3.5 px-4 rounded-xl bg-brand hover:bg-brand-dark text-white font-bold text-sm shadow-sm transition flex items-center justify-center gap-2">
+              <i class="fa-solid fa-bolt"></i>
+              <span id="placeOrderBtnText">Book & Track Live</span>
+            </button>
+          </div>
+
+          <div class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold text-base text-slate-900">Nearby Free Cleaners (Live)</h3>
+              <span class="text-[11px] font-bold text-brand bg-brand-light px-2 py-0.5 rounded-full">Sorted by ETA</span>
+            </div>
+            <div id="cleanersDirectoryList" class="space-y-2.5 max-h-72 overflow-y-auto pr-1"></div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: PICKME-STYLE LIVE SRI LANKA MAP & DISPATCH TRACKER -->
+        <div class="lg:col-span-7 space-y-4">
+          <div class="bg-white border border-blue-200 rounded-2xl overflow-hidden shadow-sm">
+            <div class="px-4 py-3.5 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2 bg-white">
+              <div>
+                <h2 class="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <i class="fa-solid fa-map-location-dot text-brand"></i>
+                  PickMe-Style Live Sri Lanka Map
+                </h2>
+                <p class="text-xs text-slate-500">Click anywhere on map or drag your dark pin • Cleaners patrol & move in real time</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="focusCustomerAndCleaner()" class="px-2.5 py-1 rounded-lg bg-brand text-white hover:bg-brand-dark text-xs font-bold shadow-sm">
+                  <i class="fa-solid fa-compress mr-1"></i> Fit Route
+                </button>
+                <button type="button" onclick="resetSriLankaMapView()" class="px-2.5 py-1 rounded-lg bg-brand-light text-brand border border-blue-200 hover:border-brand text-xs font-bold">
+                  Full SL
+                </button>
+              </div>
+            </div>
+
+            <div class="relative">
+              <div id="sriLankaLeafletMap"></div>
+
+              <!-- Top-Right Live Patrol Indicator -->
+              <div class="absolute top-3 right-3 z-[450] bg-white/95 border border-blue-200 rounded-xl px-3 py-1.5 shadow-sm text-[11px] font-bold text-slate-800 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-brand animate-ping"></span>
+                <span>Live Radar Active</span>
+              </div>
+
+              <!-- Bottom-Left Live ETA Floating Pill -->
+              <div id="mapEtaFloatingBadge" class="absolute bottom-3 left-3 z-[450] bg-white/95 border border-blue-200 rounded-xl px-3.5 py-2 shadow-md text-xs max-w-xs">
+                <div class="font-bold text-brand" id="mapEtaBadgeTitle">No Free Registered Cleaners Yet</div>
+                <div class="text-slate-700 font-semibold" id="mapEtaBadgeSub">Tap map to set pin • Register a cleaner to start</div>
+              </div>
+            </div>
+
+            <!-- PICKME-STYLE LIVE DISPATCH & CLEANER TRACKING CARD (Visible when an order is Active) -->
+            <div id="pickmeLiveDispatchCard" class="hidden border-t-2 border-brand bg-white p-4 sm:p-5 space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5">
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-brand text-white text-[11px] font-extrabold">
+                    <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                    LIVE TRACKING
+                  </span>
+                  <span id="liveTrackOrderId" class="font-mono text-xs font-extrabold text-slate-900">ORD-0000</span>
+                  <span id="liveTrackStageBadge" class="text-xs font-bold text-brand bg-brand-light px-2.5 py-0.5 rounded-full border border-blue-200">
+                    2. Cleaner On The Way
+                  </span>
+                </div>
+
+                <!-- Simulation Speed Control for Testing PickMe Live Movement -->
+                <div class="flex items-center gap-1.5">
+                  <button type="button" id="simSpeedToggleBtn" onclick="toggleDispatchSpeed()" class="px-2.5 py-1 rounded-lg bg-brand-light hover:bg-blue-100 text-brand border border-blue-200 text-[11px] font-bold transition">
+                    <i class="fa-solid fa-forward-fast mr-1"></i> Speed: <span id="simSpeedLabel">1x Live</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 4-Step PickMe Status Progress Bar -->
+              <div class="space-y-1.5">
+                <div class="w-full h-2.5 bg-blue-100 rounded-full overflow-hidden">
+                  <div id="liveTrackProgressBar" class="h-full bg-brand rounded-full transition-all duration-300" style="width: 25%"></div>
+                </div>
+                <div class="grid grid-cols-4 text-[10px] sm:text-[11px] font-bold text-slate-500">
+                  <div id="stepLabel1" class="text-brand">1. Assigned</div>
+                  <div id="stepLabel2" class="text-center text-brand">2. On The Way</div>
+                  <div id="stepLabel3" class="text-center">3. Arrived</div>
+                  <div id="stepLabel4" class="text-right">4. Cleaning</div>
+                </div>
+              </div>
+
+              <!-- Assigned Cleaner Info + Live Countdown + Quick Actions -->
+              <div class="p-3.5 rounded-2xl bg-brand-light border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-brand text-white flex items-center justify-center font-extrabold text-base shadow-sm shrink-0">
+                    <i class="fa-solid fa-broom"></i>
+                  </div>
+                  <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span id="liveTrackCleanerName" class="font-extrabold text-sm text-slate-900">Cleaner Name</span>
+                      <span id="liveTrackCleanerService" class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white text-brand border border-blue-200">Home Cleaning</span>
+                    </div>
+                    <div class="text-xs text-slate-600 mt-0.5">
+                      <span id="liveTrackEtaCountdown" class="font-extrabold text-brand">Arriving in ~12 mins</span>
+                      • Remaining: <strong id="liveTrackRemainingKm">4.2 km</strong>
+                      • Payment: <strong id="liveTrackPaymentMethod">Cash</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <a id="liveTrackCallBtn" href="tel:+94770000000" class="px-3 py-2 rounded-xl bg-white border border-blue-200 hover:border-brand text-brand text-xs font-bold inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-phone"></i> Call
+                  </a>
+                  <button type="button" onclick="sendQuickRiderMessage()" class="px-3 py-2 rounded-xl bg-white border border-blue-200 hover:border-brand text-slate-800 text-xs font-bold inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-comment-dots text-brand"></i> Message
+                  </button>
+                  <button type="button" id="liveTrackCompleteBtn" onclick="completeCurrentTrackedOrder()" class="px-3 py-2 rounded-xl bg-brand hover:bg-brand-dark text-white text-xs font-bold shadow-sm">
+                    Finish & Pay (-20%)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div id="mapSelectedCleanerBar" class="p-4 bg-brand-light border-t border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3"></div>
+          </div>
+
+          <!-- ORDERS LOG -->
+          <div class="bg-white border border-blue-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-sm sm:text-base text-slate-900">Orders Log</h3>
+              <span id="ordersCountBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-brand-light text-brand">0 Orders</span>
+            </div>
+            <div id="ordersHistoryList" class="space-y-2.5 text-sm"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 2: CLEANER REGISTRATION WITH ACCOUNT DETAILS + RS. 250 FEE       -->
+  <!-- ===================================================================== -->
+  <section id="view-register" class="hidden flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8">
+    <div class="mb-6">
+      <button type="button" onclick="navigateTo('home')" class="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1 mb-2">
+        <i class="fa-solid fa-arrow-left"></i> Back to Sri Lanka Live Map
+      </button>
+      <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Register as a Cleaner (Rs. 250 Fee)</h1>
+      <p class="text-sm text-slate-600 mt-1">
+        Fill your personal details + <strong>Bank / Payout Account Details</strong>, pay the <strong>Rs. 250.00 registration fee</strong>, and get your own <strong>Cleaner Order Admin Panel</strong>.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <form id="cleanerRegistrationForm" onsubmit="handleCleanerRegistration(event)" class="lg:col-span-7 bg-white border border-blue-200 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <h2 class="font-bold text-lg text-slate-900 border-b border-blue-100 pb-3">1. Cleaner & Service Details</h2>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="regName" class="block text-xs font-bold text-slate-700 mb-1">Full Name *</label>
+            <input type="text" id="regName" required placeholder="e.g. Nimal Perera" class="w-full rounded-xl border border-blue-200 px-3.5 py-2.5 text-sm" />
+          </div>
+          <div>
+            <label for="regPhone" class="block text-xs font-bold text-slate-700 mb-1">Phone / WhatsApp *</label>
+            <input type="tel" id="regPhone" required placeholder="e.g. +94 77 123 4567" class="w-full rounded-xl border border-blue-200 px-3.5 py-2.5 text-sm" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="regNic" class="block text-xs font-bold text-slate-700 mb-1">NIC Number *</label>
+            <input type="text" id="regNic" required placeholder="e.g. 199512345678 or 924567890V" class="w-full rounded-xl border border-blue-200 px-3.5 py-2.5 text-sm" />
+          </div>
+          <div>
+            <label for="regService" class="block text-xs font-bold text-slate-700 mb-1">Service Category *</label>
+            <select id="regService" required class="w-full rounded-xl border border-blue-200 bg-white px-3.5 py-2.5 text-sm">
+              <option value="Home Cleaning">Home Cleaning</option>
+              <option value="Sofa & Carpet">Sofa & Carpet Cleaning</option>
+              <option value="Office Cleaning">Office Cleaning</option>
+              <option value="Deep Cleaning">Deep Cleaning</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="regRate" class="block text-xs font-bold text-slate-700 mb-1">Hourly Rate (LKR) *</label>
+            <input type="number" id="regRate" required min="500" max="50000" step="50" value="1500" class="w-full rounded-xl border border-blue-200 px-3.5 py-2.5 text-sm" />
+          </div>
+          <div>
+            <label for="regArea" class="block text-xs font-bold text-slate-700 mb-1">Sri Lanka City / Area *</label>
+            <select id="regArea" required class="w-full rounded-xl border border-blue-200 bg-white px-3.5 py-2.5 text-sm"></select>
+          </div>
+        </div>
+
+        <!-- 2. ACCOUNT DETAILS FOR CLEANER -->
+        <div class="pt-2 border-t border-blue-100 space-y-3">
+          <h3 class="font-bold text-sm text-slate-900">2. Cleaner Account Details (For Payouts)</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="regBankName" class="block text-xs font-bold text-slate-700 mb-1">Bank Name *</label>
+              <input type="text" id="regBankName" required placeholder="e.g. Commercial Bank" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label for="regAccountNo" class="block text-xs font-bold text-slate-700 mb-1">Account Number *</label>
+              <input type="text" id="regAccountNo" required placeholder="e.g. 8012345678" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label for="regAccountHolder" class="block text-xs font-bold text-slate-700 mb-1">Account Holder *</label>
+              <input type="text" id="regAccountHolder" required placeholder="e.g. Nimal Perera" class="w-full rounded-xl border border-blue-200 px-3 py-2 text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. INITIAL STATUS & RS. 250 REGISTRATION FEE -->
+        <div class="pt-2 border-t border-blue-100 space-y-3">
+          <label class="block text-xs font-bold text-slate-700">3. Initial Map Status *</label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="flex items-center gap-2.5 p-3 rounded-xl border border-brand bg-brand-light cursor-pointer">
+              <input type="radio" name="regStatus" value="Free" checked class="accent-[#2563EB]" />
+              <div>
+                <div class="text-sm font-bold text-brand">Free (Show on Map)</div>
+                <div class="text-[11px] text-slate-600">Live patrol on Sri Lanka map</div>
+              </div>
+            </label>
+            <label class="flex items-center gap-2.5 p-3 rounded-xl border border-blue-200 bg-white cursor-pointer">
+              <input type="radio" name="regStatus" value="Busy" class="accent-[#2563EB]" />
+              <div>
+                <div class="text-sm font-bold text-slate-800">Busy (Hide from Map)</div>
+                <div class="text-[11px] text-slate-600">Hidden from map</div>
+              </div>
+            </label>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-brand-light border border-brand space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold text-slate-900">Cleaner Registration Fee</span>
+              <span class="text-base font-extrabold text-brand">Rs. 250.00 LKR</span>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-slate-800 font-medium cursor-pointer">
+              <input type="checkbox" id="regFeePaidConfirm" required checked class="accent-[#2563EB]" />
+              <span>I confirm payment of the <strong>Rs. 250.00</strong> registration fee & accept the <strong>20%</strong> commission on completed jobs.</span>
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full py-3.5 px-5 rounded-xl bg-brand hover:bg-brand-dark text-white font-bold text-sm shadow-sm transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-user-check"></i>
+          <span>Pay Rs. 250 & Register Cleaner</span>
+        </button>
+      </form>
+
+      <div class="lg:col-span-5 bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-base text-slate-900">Registered Cleaners</h3>
+          <span id="regCountBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-brand-light text-brand">0</span>
+        </div>
+        <div id="registeredPreviewList" class="space-y-2.5 max-h-[520px] overflow-y-auto pr-1"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 3: INDIVIDUAL CLEANER ORDER ADMIN PANEL                          -->
+  <!-- ===================================================================== -->
+  <section id="view-seller-admin" class="hidden flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <button type="button" onclick="navigateTo('home')" class="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1 mb-2">
+          <i class="fa-solid fa-arrow-left"></i> Back to Sri Lanka Live Map
+        </button>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Cleaner Order Admin Panel</h1>
+        <p class="text-sm text-slate-600 mt-1">
+          After completing a job with <strong>Cash</strong> or <strong>Card</strong> payment, click <strong>Complete Job (20% Fee)</strong> so 20% commission is recorded and you become <strong>Free</strong> on the live map.
+        </p>
+      </div>
+
+      <div class="bg-white border border-blue-200 rounded-2xl p-3 flex flex-wrap items-center gap-2 shadow-sm">
+        <label for="sellerAdminSelect" class="text-xs font-bold text-slate-700">Cleaner:</label>
+        <select id="sellerAdminSelect" onchange="switchActiveSellerAdmin(this.value)" class="rounded-xl border border-blue-200 px-3 py-1.5 text-xs font-bold text-slate-900"></select>
+      </div>
+    </div>
+
+    <div id="sellerAdminContent" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"></div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 4: WEB ADMIN PANEL (ALL DETAILS + CASH PAYMENTS SEPARATE)       -->
+  <!-- ===================================================================== -->
+  <section id="view-web-admin" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <button type="button" onclick="navigateTo('home')" class="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1 mb-2">
+          <i class="fa-solid fa-arrow-left"></i> Back to Sri Lanka Live Map
+        </button>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Web Admin Control Panel</h1>
+        <p class="text-sm text-slate-600 mt-1">
+          View all registered cleaners, account details, Rs. 250 registration fees, 20% commissions, and <strong>Cash payments separately</strong>.
+        </p>
+      </div>
+      <div id="webAdminAuthBadge" class="px-3 py-1.5 rounded-xl bg-brand-light border border-blue-200 text-xs font-bold text-brand">
+        Web Admin View
+      </div>
+    </div>
+
+    <!-- Top Summary Cards -->
+    <div id="webAdminSummaryCards" class="grid grid-cols-2 lg:grid-cols-5 gap-3"></div>
+
+    <!-- Section A: Cash Payments Only (Wenama Section) -->
+    <div class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3">
+      <div class="flex items-center justify-between border-b border-blue-100 pb-3">
+        <div>
+          <h2 class="font-bold text-base text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-money-bill-wave text-brand"></i>
+            Cash Payments Only (Wenama Cash Log)
+          </h2>
+          <p class="text-xs text-slate-500">All orders paid by Cash, showing gross amount, 20% platform commission, and 80% cleaner share</p>
+        </div>
+        <span id="cashOrdersCountBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-light text-brand">0 Cash Orders</span>
+      </div>
+      <div id="webAdminCashOrdersList" class="space-y-2.5 text-xs"></div>
+    </div>
+
+    <!-- Section B: All Orders (Cash + Card) & Registered Cleaners with Account Details -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div class="lg:col-span-7 bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 class="font-bold text-base text-slate-900 border-b border-blue-100 pb-3">All Orders (Cash & Card • 20% Commission)</h3>
+        <div id="webAdminAllOrdersList" class="space-y-2.5 text-xs"></div>
+      </div>
+
+      <div class="lg:col-span-5 bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 class="font-bold text-base text-slate-900 border-b border-blue-100 pb-3">Registered Cleaners & Account Details (Rs. 250 Paid)</h3>
+        <div id="webAdminCleanersList" class="space-y-2.5 text-xs"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-blue-100 py-6 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+      <div class="font-bold text-slate-900">
+        Clean<span class="text-brand">Me</span> LK <span class="font-normal text-slate-500">• PickMe-Style Live Map • Rs. 250 Reg Fee • 20% Commission</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="button" onclick="navigateTo('home')" class="hover:text-brand font-semibold">Live Map</button>
+        <button type="button" onclick="navigateTo('login')" class="hover:text-brand font-semibold">Login</button>
+        <button type="button" onclick="navigateTo('register')" class="hover:text-brand font-semibold">Register</button>
+        <button type="button" onclick="navigateTo('web-admin')" class="hover:text-brand font-semibold">Web Admin</button>
+        <button type="button" onclick="clearAllRecords()" class="hover:text-brand font-semibold">Clear Records</button>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // LOCATIONIQ & SUPABASE CONFIGURATION
+    // =========================================================================
+    // Paste your free LocationIQ Access Token below (e.g. "pk.xxxxxxxx..."):
+    const LOCATIONIQ_API_KEY = "YOUR_LOCATIONIQ_TOKEN_HERE";
+
+    const SUPABASE_URL = 'https://ijpbugqhkbxgsirptdbh.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_IdRv3VZ_n0ACSQGgGi2RhQ_nyIHSv6E';
+
+    let supabaseClient = null;
+    try {
+      if (window.supabase && typeof window.supabase.createClient === 'function') {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+    } catch (e) {
+      supabaseClient = null;
+    }
+
+    const PLATFORM_COMMISSION_RATE = 0.20; // 20% on every completed job
+    const REGISTRATION_FEE_LKR = 250;     // Rs. 250 per cleaner registration
+    const SRI_LANKA_CENTER = [7.8731, 80.7718];
+    const SRI_LANKA_DEFAULT_ZOOM = 7;
+
+    const SRI_LANKA_LOCATIONS = {
+      'Colombo': { lat: 6.9271, lng: 79.8612 },
+      'Nugegoda': { lat: 6.8649, lng: 79.8997 },
+      'Dehiwala - Mount Lavinia': { lat: 6.8404, lng: 79.8636 },
+      'Battaramulla': { lat: 6.8986, lng: 79.9182 },
+      'Negombo': { lat: 7.2008, lng: 79.8737 },
+      'Gampaha': { lat: 7.0873, lng: 80.0142 },
+      'Kandy': { lat: 7.2906, lng: 80.6337 },
+      'Galle': { lat: 6.0535, lng: 80.2210 },
+      'Matara': { lat: 5.9549, lng: 80.5550 },
+      'Jaffna': { lat: 9.6615, lng: 80.0255 },
+      'Anuradhapura': { lat: 8.3114, lng: 80.4037 },
+      'Polonnaruwa': { lat: 7.9403, lng: 81.0188 },
+      'Kurunegala': { lat: 7.4863, lng: 80.3647 },
+      'Ratnapura': { lat: 6.7056, lng: 80.3847 },
+      'Nuwara Eliya': { lat: 6.9497, lng: 80.7891 },
+      'Badulla': { lat: 6.9934, lng: 81.0550 },
+      'Trincomalee': { lat: 8.5874, lng: 81.2152 },
+      'Batticaloa': { lat: 7.7310, lng: 81.6747 }
+    };
+
+    const SRI_LANKA_ISLAND_POLYGON = [
+      [9.829, 80.205], [9.680, 80.420], [9.480, 80.620], [9.180, 80.820],
+      [8.820, 81.050], [8.587, 81.215], [8.250, 81.420], [7.920, 81.620],
+      [7.731, 81.675], [7.420, 81.820], [6.950, 81.840], [6.420, 81.680],
+      [6.120, 81.250], [5.955, 80.555], [6.054, 80.221], [6.420, 79.980],
+      [6.840, 79.864], [6.927, 79.861], [7.201, 79.874], [7.620, 79.810],
+      [8.020, 79.830], [8.480, 79.820], [8.950, 79.910], [9.350, 80.020],
+      [9.662, 80.026], [9.829, 80.205]
+    ];
+
+
+    let cleaners = [];
+    let orders = [];
+    let selectedFreeCleanerId = null;
+    let activeAdminSellerId = null;
+    let orderHours = 2;
+    let paymentMethod = 'Cash';
+    let sessionRole = 'Guest';
+    let sessionUserName = '';
+    let isWebAdminAuthenticated = false;
+
+    // Customer Live Pin State (Supports dropdown, map click, pin drag, and GPS)
+    let customerPin = {
+      lat: SRI_LANKA_LOCATIONS['Colombo'].lat,
+      lng: SRI_LANKA_LOCATIONS['Colombo'].lng,
+      label: 'Colombo',
+      isCustomPin: false
+    };
+
+    // Leaflet Map & PickMe Live Tracking State
+    let slMap = null;
+    let sellerMarkersLayer = null;
+    let customerMarker = null;
+    let routeRemainingLine = null;
+    let routeTraveledLine = null;
+    let activeDispatchMarker = null;
+
+    // LocationIQ Autocomplete, Reverse Geocode & Road Route Cache
+    let locationSearchDebounce = null;
+    let roadRouteCache = {
+      key: '',
+      coords: null,
+      distanceKm: null,
+      etaMinutes: null
+    };
+
+    // Real-Time Patrol & Live Dispatch Animation Loop
+    let patrolTimer = null;
+    let dispatchTimer = null;
+    let dispatchSpeedMultiplier = 1; // 1 = normal live speed, 4 = fast simulation
+    let liveTrackingState = null;
+
+    function hasValidLocationIqKey() {
+      if (typeof LOCATIONIQ_API_KEY !== 'string') return false;
+      const k = LOCATIONIQ_API_KEY.trim();
+      return k.length > 8 && !/^YOUR_/i.test(k) && !/TOKEN_HERE/i.test(k);
+    }
+
+    // Strips characters that could break HTML / inline onclick strings (idempotent, safe to re-run)
+    function safeText(v) {
+      return String(v ?? '').replace(/[<>"'`&\\]/g, '').trim();
+    }
+
+    function generateUniqueId(prefix, existingIds) {
+      let id;
+      do {
+        id = prefix + Math.floor(1000 + Math.random() * 9000);
+      } while (existingIds.includes(id));
+      return id;
+    }
+
+    // True while the customer drags the pin (prevents map re-render from killing the drag)
+    let isDraggingPin = false;
+    let sessionCleanerId = null;
+
+    // =========================================================================
+    // LOCATIONIQ: SRI LANKA AUTOCOMPLETE SEARCH & REVERSE GEOCODING
+    // =========================================================================
+    function handleLocationSearchInput(query) {
+      const resultsBox = document.getElementById('slLocationSearchResults');
+      if (!resultsBox) return;
+
+      const trimmed = (query || '').trim();
+      if (locationSearchDebounce) clearTimeout(locationSearchDebounce);
+
+      if (!trimmed) {
+        // Show quick Sri Lanka city hubs when search is empty & focused
+        const hubs = Object.entries(SRI_LANKA_LOCATIONS).slice(0, 8);
+        resultsBox.innerHTML = hubs.map(([city, coords]) => `
+          <button
+            type="button"
+            onclick="selectSearchedLocation(${coords.lat}, ${coords.lng}, '${city.replace(/'/g, "\\'")}')"
+            class="w-full text-left px-3 py-2 hover:bg-brand-light transition flex items-center justify-between text-xs"
+          >
+            <span class="font-bold text-slate-800"><i class="fa-solid fa-city text-brand mr-1.5"></i>${city}</span>
+            <span class="text-[10px] font-semibold text-brand">Sri Lanka Hub</span>
+          </button>
+        `).join('');
+        resultsBox.classList.remove('hidden');
+        return;
+      }
+
+      // Local Sri Lanka city matches immediately
+      const localMatches = Object.entries(SRI_LANKA_LOCATIONS)
+        .filter(([city]) => city.toLowerCase().includes(trimmed.toLowerCase()))
+        .map(([city, coords]) => ({
+          displayName: `${city}, Sri Lanka`,
+          shortName: city,
+          lat: coords.lat,
+          lng: coords.lng,
+          source: 'Hub'
+        }));
+
+      if (!hasValidLocationIqKey()) {
+        renderSearchDropdown(localMatches, 'Add LocationIQ API key for full street search');
+        return;
+      }
+
+      locationSearchDebounce = setTimeout(async () => {
+        try {
+          const url = `https://api.locationiq.com/v1/autocomplete?key=${encodeURIComponent(LOCATIONIQ_API_KEY.trim())}&q=${encodeURIComponent(trimmed)}&countrycodes=lk&limit=6&format=json`;
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('Autocomplete HTTP ' + resp.status);
+          const data = await resp.json();
+
+          const apiItems = Array.isArray(data)
+            ? data.map(item => ({
+                displayName: safeText(item.display_name || item.display_place || trimmed),
+                shortName: safeText(item.display_place || (item.display_name || '').split(',')[0] || trimmed),
+                lat: parseFloat(item.lat),
+                lng: parseFloat(item.lon),
+                source: 'LocationIQ'
+              })).filter(i => !Number.isNaN(i.lat) && !Number.isNaN(i.lng))
+            : [];
+
+          renderSearchDropdown(apiItems.length > 0 ? apiItems : localMatches);
+        } catch (err) {
+          renderSearchDropdown(localMatches, 'Offline/fallback Sri Lanka hubs shown');
+        }
+      }, 260);
+    }
+
+    function renderSearchDropdown(items, note = '') {
+      const resultsBox = document.getElementById('slLocationSearchResults');
+      if (!resultsBox) return;
+
+      if (!items || items.length === 0) {
+        resultsBox.innerHTML = `<div class="px-3 py-2.5 text-xs text-slate-500">${note || 'No matching Sri Lanka locations found.'}</div>`;
+        resultsBox.classList.remove('hidden');
+        return;
+      }
+
+      resultsBox.innerHTML = `
+        ${note ? `<div class="px-3 py-1.5 bg-brand-light/70 text-[10px] font-bold text-brand">${note}</div>` : ''}
+        ${items.map(item => `
+          <button
+            type="button"
+            onclick="selectSearchedLocation(${item.lat}, ${item.lng}, '${String(item.shortName).replace(/'/g, "\\'")}')"
+            class="w-full text-left px-3 py-2 hover:bg-brand-light transition flex items-start justify-between gap-2 text-xs"
+          >
+            <span class="font-semibold text-slate-800 line-clamp-2"><i class="fa-solid fa-location-dot text-brand mr-1.5"></i>${item.displayName}</span>
+            <span class="text-[10px] font-bold text-brand shrink-0">${item.source}</span>
+          </button>
+        `).join('')}
+      `;
+      resultsBox.classList.remove('hidden');
+    }
+
+    function selectSearchedLocation(lat, lng, label) {
+      const resultsBox = document.getElementById('slLocationSearchResults');
+      const inputEl = document.getElementById('slLocationSearchInput');
+      if (resultsBox) resultsBox.classList.add('hidden');
+      if (inputEl) inputEl.value = label;
+
+      setCustomerPinCoordinates(lat, lng, label, true, false);
+      if (slMap) {
+        slMap.setView([lat, lng], 13);
+      }
+    }
+
+    function clearLocationSearch() {
+      const inputEl = document.getElementById('slLocationSearchInput');
+      const resultsBox = document.getElementById('slLocationSearchResults');
+      if (inputEl) inputEl.value = '';
+      if (resultsBox) resultsBox.classList.add('hidden');
+    }
+
+    async function reverseGeocodeWithLocationIq(lat, lng) {
+      if (!hasValidLocationIqKey()) return null;
+      try {
+        const url = `https://us1.locationiq.com/v1/reverse?key=${encodeURIComponent(LOCATIONIQ_API_KEY.trim())}&lat=${lat}&lon=${lng}&format=json`;
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        const addr = data?.address || {};
+        const place = addr.suburb || addr.neighbourhood || addr.city || addr.town || addr.village || addr.county;
+        if (place) return safeText(place);
+        if (data?.display_name) {
+          return safeText(String(data.display_name).split(',').slice(0, 2).join(','));
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // =========================================================================
+    // LOCATIONIQ DIRECTIONS API (REAL ROAD ROUTE + DISTANCE + ETA WITH FALLBACK)
+    // =========================================================================
+    async function fetchLocationIqRoadRoute(fromLat, fromLng, toLat, toLng) {
+      const cacheKey = `${fromLat.toFixed(4)},${fromLng.toFixed(4)}->${toLat.toFixed(4)},${toLng.toFixed(4)}`;
+      if (roadRouteCache.key === cacheKey && roadRouteCache.coords) {
+        return roadRouteCache;
+      }
+
+      if (!hasValidLocationIqKey()) {
+        return null;
+      }
+
+      try {
+        // LocationIQ Directions expects lon,lat;lon,lat
+        const coordsParam = `${fromLng},${fromLat};${toLng},${toLat}`;
+        const url = `https://us1.locationiq.com/v1/directions/driving/${coordsParam}?key=${encodeURIComponent(LOCATIONIQ_API_KEY.trim())}&overview=full&geometries=geojson`;
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        const route = data?.routes?.[0];
+        const coords = route?.geometry?.coordinates;
+        if (!Array.isArray(coords) || coords.length < 2) return null;
+
+        // Convert GeoJSON [lng, lat] to Leaflet [lat, lng]
+        const latLngPath = coords.map(([lng, lat]) => [Number(lat), Number(lng)]);
+        const distanceKm = Math.max(0.5, Number(((route.distance || 0) / 1000).toFixed(1)));
+        const etaMinutes = Math.max(3, Math.round((route.duration || 0) / 60));
+
+        roadRouteCache = {
+          key: cacheKey,
+          coords: latLngPath,
+          distanceKm,
+          etaMinutes
+        };
+        return roadRouteCache;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function refreshSelectedCleanerRoadRoute() {
+      const cleaner = getSelectedFreeCleaner();
+      if (!cleaner || liveTrackingState) return;
+      const roadData = await fetchLocationIqRoadRoute(cleaner.lat, cleaner.lng, customerPin.lat, customerPin.lng);
+      if (roadData && roadData.coords && !liveTrackingState) {
+        const etaEl = document.getElementById('etaMinutesText');
+        const distEl = document.getElementById('distanceKmText');
+        const badgeTitle = document.getElementById('mapEtaBadgeTitle');
+        const badgeSub = document.getElementById('mapEtaBadgeSub');
+        if (etaEl) etaEl.textContent = `~${roadData.etaMinutes} mins away`;
+        if (distEl) distEl.textContent = `${roadData.distanceKm} km (Road)`;
+        if (badgeTitle) badgeTitle.textContent = `${cleaner.name} arrives in ~${roadData.etaMinutes} mins`;
+        if (badgeSub) badgeSub.textContent = `Road Distance: ${roadData.distanceKm} km via LocationIQ`;
+
+        if (slMap && routeRemainingLine) {
+          slMap.removeLayer(routeRemainingLine);
+          routeRemainingLine = L.polyline(roadData.coords, {
+            color: '#2563EB',
+            weight: 4,
+            dashArray: '8, 8',
+            opacity: 0.92
+          }).addTo(slMap);
+        }
+      }
+    }
+
+    // =========================================================================
+    // LOCATION & PIN HELPERS
+    // =========================================================================
+    function populateLocationSelects() {
+      const names = Object.keys(SRI_LANKA_LOCATIONS);
+      const custSel = document.getElementById('customerAreaSelect');
+      const regSel = document.getElementById('regArea');
+
+      if (custSel) {
+        custSel.innerHTML = names.map(loc =>
+          `<option value="${loc}" ${loc === 'Colombo' ? 'selected' : ''}>${loc}</option>`
+        ).join('');
+      }
+      if (regSel) {
+        regSel.innerHTML = names.map(loc =>
+          `<option value="${loc}">${loc}</option>`
+        ).join('');
+      }
+    }
+
+    function findNearestSriLankaCity(lat, lng) {
+      let nearestName = 'Colombo';
+      let minDist = Infinity;
+      Object.entries(SRI_LANKA_LOCATIONS).forEach(([city, coords]) => {
+        const d = haversineKm(lat, lng, coords.lat, coords.lng);
+        if (d < minDist) {
+          minDist = d;
+          nearestName = city;
+        }
+      });
+      return { city: nearestName, distanceKm: minDist };
+    }
+
+    async function setCustomerPinCoordinates(lat, lng, customLabel = null, syncDropdown = true, doReverseGeocode = true) {
+      const clampedLat = Math.max(5.85, Math.min(9.90, Number(lat.toFixed(5))));
+      const clampedLng = Math.max(79.50, Math.min(81.95, Number(lng.toFixed(5))));
+      const nearest = findNearestSriLankaCity(clampedLat, clampedLng);
+
+      customerPin.lat = clampedLat;
+      customerPin.lng = clampedLng;
+      customerPin.label = safeText(customLabel) || (nearest.distanceKm < 2.5 ? nearest.city : `Near ${nearest.city}`);
+      customerPin.isCustomPin = Boolean(customLabel);
+
+      if (syncDropdown) {
+        const custSel = document.getElementById('customerAreaSelect');
+        if (custSel && SRI_LANKA_LOCATIONS[nearest.city]) {
+          custSel.value = nearest.city;
+        }
+      }
+
+      const labelEl = document.getElementById('pinLabelText');
+      const coordsEl = document.getElementById('pinCoordsText');
+      if (labelEl) labelEl.textContent = customerPin.label;
+      if (coordsEl) coordsEl.textContent = `${clampedLat.toFixed(4)}, ${clampedLng.toFixed(4)}`;
+
+      // Auto-select closest Free cleaner when pin moves (if no active dispatch)
+      if (!liveTrackingState) {
+        const freeList = getFreeCleaners();
+        if (freeList.length > 0) {
+          let best = freeList[0];
+          let bestDist = haversineKm(clampedLat, clampedLng, best.lat, best.lng);
+          freeList.forEach(c => {
+            const d = haversineKm(clampedLat, clampedLng, c.lat, c.lng);
+            if (d < bestDist) {
+              best = c;
+              bestDist = d;
+            }
+          });
+          selectedFreeCleanerId = best.id;
+        }
+      }
+
+      renderAll();
+      refreshSelectedCleanerRoadRoute();
+
+      if (!customLabel && doReverseGeocode && hasValidLocationIqKey()) {
+        const resolvedName = await reverseGeocodeWithLocationIq(clampedLat, clampedLng);
+        if (resolvedName && Math.abs(customerPin.lat - clampedLat) < 0.0002 && Math.abs(customerPin.lng - clampedLng) < 0.0002) {
+          customerPin.label = resolvedName;
+          if (labelEl) labelEl.textContent = resolvedName;
+          const searchInput = document.getElementById('slLocationSearchInput');
+          if (searchInput) searchInput.value = resolvedName;
+          if (customerMarker) {
+            customerMarker.setIcon(buildCustomerMarkerIcon(resolvedName));
+            customerMarker._renderedLabel = resolvedName;
+          }
+          updateOrderSummary();
+        }
+      }
+    }
+
+    function useLiveGpsLocation() {
+      const btn = document.getElementById('liveGpsBtn');
+      if (!navigator.geolocation) {
+        showAlert('Live GPS is not supported by this browser. Click anywhere on the map to drop your pin.', 'warning');
+        return;
+      }
+
+      if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Locating...`;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (btn) btn.innerHTML = `<i class="fa-solid fa-location-crosshairs"></i> Use My Live GPS`;
+          const { latitude, longitude } = pos.coords;
+          // Check if user is inside Sri Lanka bounds; if outside SL (e.g., testing abroad), center on Colombo with notice
+          const inSriLanka = latitude >= 5.8 && latitude <= 9.9 && longitude >= 79.4 && longitude <= 82.0;
+          if (inSriLanka) {
+            setCustomerPinCoordinates(latitude, longitude, 'My Live GPS', true, true);
+            if (slMap) slMap.setView([latitude, longitude], 13);
+            showAlert('Live GPS pin updated on Sri Lanka map!', 'success');
+          } else {
+            const col = SRI_LANKA_LOCATIONS['Colombo'];
+            setCustomerPinCoordinates(col.lat, col.lng, 'Colombo (Live Pin)', true, false);
+            if (slMap) slMap.setView([col.lat, col.lng], 12);
+            showAlert('GPS detected outside Sri Lanka — placed live pin in Colombo. You can drag the pin anywhere in Sri Lanka.', 'info');
+          }
+        },
+        () => {
+          if (btn) btn.innerHTML = `<i class="fa-solid fa-location-crosshairs"></i> Use My Live GPS`;
+          showAlert('GPS permission denied. Tap anywhere on the Sri Lanka map or drag your pin directly.', 'warning');
+        },
+        { enableHighAccuracy: true, timeout: 7000 }
+      );
+    }
+
+    // =========================================================================
+    // LEAFLET MAP & PICKME-STYLE LIVE RADAR INITIALIZATION
+    // =========================================================================
+    function initSriLankaMap() {
+      const mapEl = document.getElementById('sriLankaLeafletMap');
+      if (!mapEl || !window.L || slMap) return;
+
+      slMap = L.map('sriLankaLeafletMap', {
+        center: SRI_LANKA_CENTER,
+        zoom: SRI_LANKA_DEFAULT_ZOOM,
+        minZoom: 6,
+        maxZoom: 17
+      });
+
+      const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; CartoDB &copy; OpenStreetMap',
+        subdomains: 'abcd',
+        maxZoom: 18
+      });
+      tileLayer.on('tileerror', () => {});
+      tileLayer.addTo(slMap);
+
+      // Sri Lanka Island Polygon Highlight
+      L.polygon(SRI_LANKA_ISLAND_POLYGON, {
+        color: '#2563EB',
+        weight: 2,
+        fillColor: '#DBEAFE',
+        fillOpacity: 0.32
+      }).addTo(slMap);
+
+      // City Hubs
+      Object.entries(SRI_LANKA_LOCATIONS).forEach(([city, coords]) => {
+        L.circleMarker([coords.lat, coords.lng], {
+          radius: 3.5,
+          color: '#1D4ED8',
+          weight: 1.5,
+          fillColor: '#EFF6FF',
+          fillOpacity: 0.95
+        })
+          .bindTooltip(city, { permanent: false, direction: 'top' })
+          .addTo(slMap);
+      });
+
+      sellerMarkersLayer = L.layerGroup().addTo(slMap);
+
+      // Draggable Customer Pin with Pulsing Radar
+      customerMarker = L.marker([customerPin.lat, customerPin.lng], {
+        draggable: true,
+        zIndexOffset: 900,
+        icon: buildCustomerMarkerIcon(customerPin.label)
+      }).addTo(slMap);
+
+      customerMarker.on('dragstart', () => { isDraggingPin = true; });
+      customerMarker.on('dragend', async (ev) => {
+        isDraggingPin = false;
+        const pos = ev.target.getLatLng();
+        await setCustomerPinCoordinates(pos.lat, pos.lng, null, true, true);
+        showAlert(`Pickup pin moved to ${customerPin.label}.`, 'info');
+      });
+
+      // Click anywhere on map to drop customer pin like PickMe
+      slMap.on('click', async (e) => {
+        const resultsBox = document.getElementById('slLocationSearchResults');
+        if (resultsBox) resultsBox.classList.add('hidden');
+        await setCustomerPinCoordinates(e.latlng.lat, e.latlng.lng, null, true, true);
+      });
+
+      startCleanerPatrolLoop();
+    }
+
+    function buildCustomerMarkerIcon(label) {
+      return L.divIcon({
+        className: '',
+        html: `
+          <div class="sl-map-pin-wrapper">
+            <div class="radar-ring radar-ring-dark"></div>
+            <div class="sl-map-pin sl-customer-pin">
+              <i class="fa-solid fa-location-dot text-blue-300"></i>
+              <span>You (${label})</span>
+            </div>
+          </div>
+        `,
+        iconSize: [0, 0]
+      });
+    }
+
+    function buildCleanerMarkerIcon(cleaner, etaMinutes, isSelected, isActiveDispatch = false) {
+      const pinClass = isActiveDispatch
+        ? 'sl-seller-pin sl-seller-pin-active-ride'
+        : isSelected
+          ? 'sl-seller-pin sl-seller-pin-selected'
+          : 'sl-seller-pin';
+
+      return L.divIcon({
+        className: '',
+        html: `
+          <div class="sl-map-pin-wrapper">
+            ${(isSelected || isActiveDispatch) ? '<div class="radar-ring"></div>' : ''}
+            <div class="${pinClass}">
+              <i class="fa-solid ${isActiveDispatch ? 'fa-van-shuttle' : 'fa-broom'}"></i>
+              <span>${cleaner.name} • ~${etaMinutes}m</span>
+            </div>
+          </div>
+        `,
+        iconSize: [0, 0]
+      });
+    }
+
+    function resetSriLankaMapView() {
+      if (!slMap) return;
+      slMap.setView(SRI_LANKA_CENTER, SRI_LANKA_DEFAULT_ZOOM);
+    }
+
+    function focusCustomerAndCleaner() {
+      if (!slMap) return;
+      const targetCleaner = liveTrackingState
+        ? { lat: liveTrackingState.currentLat, lng: liveTrackingState.currentLng }
+        : getSelectedFreeCleaner();
+
+      if (targetCleaner) {
+        const bounds = L.latLngBounds(
+          [customerPin.lat, customerPin.lng],
+          [targetCleaner.lat, targetCleaner.lng]
+        );
+        slMap.fitBounds(bounds, { padding: [55, 55], maxZoom: 13 });
+      } else {
+        slMap.setView([customerPin.lat, customerPin.lng], 11);
+      }
+    }
+
+    // Gentle real-time movement of Free cleaners around their area (PickMe live radar feel)
+    function startCleanerPatrolLoop() {
+      if (patrolTimer) clearInterval(patrolTimer);
+      patrolTimer = setInterval(() => {
+        const freeList = getFreeCleaners();
+        if (freeList.length === 0) return;
+
+        freeList.forEach(c => {
+          if (typeof c.baseLat !== 'number') c.baseLat = c.lat;
+          if (typeof c.baseLng !== 'number') c.baseLng = c.lng;
+          if (typeof c.patrolAngle !== 'number') c.patrolAngle = Math.random() * Math.PI * 2;
+
+          c.patrolAngle += 0.22;
+          const radius = 0.0045; // ~500m gentle patrol radius
+          c.lat = Number((c.baseLat + Math.sin(c.patrolAngle) * radius).toFixed(5));
+          c.lng = Number((c.baseLng + Math.cos(c.patrolAngle) * radius).toFixed(5));
+        });
+
+        // Re-render map markers & live ETA smoothly if home view is visible
+        const homeView = document.getElementById('view-home');
+        if (homeView && !homeView.classList.contains('hidden') && !isDraggingPin) {
+          renderSriLankaMap();
+          updateOrderSummary();
+        }
+      }, 2200);
+    }
+
+    function renderSriLankaMap() {
+      if (!slMap) initSriLankaMap();
+      if (!slMap || !sellerMarkersLayer) return;
+
+      if (customerMarker && !isDraggingPin) {
+        customerMarker.setLatLng([customerPin.lat, customerPin.lng]);
+        // Only rebuild the icon when the label changed (rebuilding every tick breaks dragging)
+        if (customerMarker._renderedLabel !== customerPin.label) {
+          customerMarker.setIcon(buildCustomerMarkerIcon(customerPin.label));
+          customerMarker._renderedLabel = customerPin.label;
+        }
+      }
+
+      sellerMarkersLayer.clearLayers();
+      if (routeRemainingLine) {
+        slMap.removeLayer(routeRemainingLine);
+        routeRemainingLine = null;
+      }
+      if (routeTraveledLine) {
+        slMap.removeLayer(routeTraveledLine);
+        routeTraveledLine = null;
+      }
+      if (activeDispatchMarker) {
+        slMap.removeLayer(activeDispatchMarker);
+        activeDispatchMarker = null;
+      }
+
+      // 1. Render all Free patrolling cleaners
+      const freeSellers = getFreeCleaners();
+      freeSellers.forEach(s => {
+        const isSelected = !liveTrackingState && s.id === selectedFreeCleanerId;
+        const route = calculateCustomerToSellerRoute(s);
+
+        const marker = L.marker([s.lat, s.lng], {
+          icon: buildCleanerMarkerIcon(s, route.etaMinutes, isSelected, false)
+        });
+
+        marker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          selectFreeCleaner(s.id);
+        });
+        marker.addTo(sellerMarkersLayer);
+      });
+
+      // 2. If a PickMe-style Live Dispatch Order is active, draw traveled + remaining route & moving cleaner
+      if (liveTrackingState) {
+        const st = liveTrackingState;
+
+        // Solid traveled path
+        if (st.traveledCoords.length > 1) {
+          routeTraveledLine = L.polyline(st.traveledCoords, {
+            color: '#1D4ED8',
+            weight: 5,
+            opacity: 0.95
+          }).addTo(slMap);
+        }
+
+        // Dashed remaining path
+        routeRemainingLine = L.polyline(
+          [
+            [st.currentLat, st.currentLng],
+            [st.destLat, st.destLng]
+          ],
+          {
+            color: '#2563EB',
+            weight: 4,
+            dashArray: '8, 8',
+            opacity: 0.85
+          }
+        ).addTo(slMap);
+
+        // Moving assigned cleaner marker
+        activeDispatchMarker = L.marker([st.currentLat, st.currentLng], {
+          zIndexOffset: 1000,
+          icon: buildCleanerMarkerIcon(
+            { name: st.cleanerName },
+            st.remainingMinutes,
+            true,
+            true
+          )
+        }).addTo(slMap);
+      } else {
+        // Preview route from selected Free cleaner to customer pin
+        const selectedFree = getSelectedFreeCleaner();
+        if (selectedFree) {
+          routeRemainingLine = L.polyline(
+            [
+              [customerPin.lat, customerPin.lng],
+              [selectedFree.lat, selectedFree.lng]
+            ],
+            {
+              color: '#2563EB',
+              weight: 4,
+              dashArray: '8, 8',
+              opacity: 0.9
+            }
+          ).addTo(slMap);
+        }
+      }
+
+      setTimeout(() => {
+        try {
+          if (slMap) slMap.invalidateSize();
+        } catch (e) {}
+      }, 60);
+    }
+
+    // =========================================================================
+    // PICKME-STYLE LIVE DISPATCH SIMULATION & TRACKING CARD
+    // =========================================================================
+    function buildRoadWaypoints(startLat, startLng, endLat, endLng, steps = 45, realRoadCoords = null) {
+      if (Array.isArray(realRoadCoords) && realRoadCoords.length >= 2) {
+        return realRoadCoords;
+      }
+
+      const points = [];
+      // Slight perpendicular road-curve offset so the path looks like a real road route
+      const dLat = endLat - startLat;
+      const dLng = endLng - startLng;
+      const curveOffsetLat = -dLng * 0.14;
+      const curveOffsetLng = dLat * 0.14;
+
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const arch = Math.sin(t * Math.PI);
+        const lat = startLat + dLat * t + curveOffsetLat * arch;
+        const lng = startLng + dLng * t + curveOffsetLng * arch;
+        points.push([Number(lat.toFixed(5)), Number(lng.toFixed(5))]);
+      }
+      return points;
+    }
+
+    async function startLiveOrderDispatch(order, cleaner) {
+      if (dispatchTimer) clearInterval(dispatchTimer);
+
+      const startLat = cleaner.lat;
+      const startLng = cleaner.lng;
+      const destLat = customerPin.lat;
+      const destLng = customerPin.lng;
+
+      let roadData = await fetchLocationIqRoadRoute(startLat, startLng, destLat, destLng);
+      const totalDistanceKm = roadData?.distanceKm ?? order.distanceKm;
+      const totalMinutes = roadData?.etaMinutes ?? order.etaMinutes;
+      const waypoints = buildRoadWaypoints(startLat, startLng, destLat, destLng, 45, roadData?.coords);
+
+      liveTrackingState = {
+        orderId: order.id,
+        cleanerId: cleaner.id,
+        cleanerName: cleaner.name,
+        cleanerPhone: cleaner.phone,
+        service: order.service,
+        paymentMethod: order.paymentMethod,
+        totalDistanceKm,
+        remainingKm: totalDistanceKm,
+        totalMinutes,
+        remainingMinutes: totalMinutes,
+        waypoints,
+        stepIndex: 0,
+        currentLat: startLat,
+        currentLng: startLng,
+        destLat,
+        destLng,
+        traveledCoords: [[startLat, startLng]],
+        stage: 2 // 1: Assigned, 2: On The Way, 3: Arrived, 4: Cleaning In Progress
+      };
+
+      updateLiveDispatchCardUI();
+      renderSriLankaMap();
+      focusCustomerAndCleaner();
+
+      dispatchTimer = setInterval(() => {
+        if (!liveTrackingState) {
+          clearInterval(dispatchTimer);
+          return;
+        }
+
+        const st = liveTrackingState;
+        const advance = dispatchSpeedMultiplier;
+        st.stepIndex = Math.min(st.waypoints.length - 1, st.stepIndex + advance);
+        const [nextLat, nextLng] = st.waypoints[st.stepIndex];
+
+        st.currentLat = nextLat;
+        st.currentLng = nextLng;
+        st.traveledCoords.push([nextLat, nextLng]);
+
+        const progressRatio = st.stepIndex / (st.waypoints.length - 1);
+        st.remainingKm = Math.max(0, Number((st.totalDistanceKm * (1 - progressRatio)).toFixed(1)));
+        st.remainingMinutes = Math.max(0, Math.ceil(st.totalMinutes * (1 - progressRatio)));
+
+        if (progressRatio >= 1) {
+          st.stage = 4; // Arrived & Cleaning in Progress
+          clearInterval(dispatchTimer);
+          showAlert(`${st.cleanerName} has arrived at ${customerPin.label}! Cleaning is now in progress.`, 'success');
+        } else if (progressRatio >= 0.85) {
+          st.stage = 3; // Arriving Now
+        } else {
+          st.stage = 2; // On The Way
+        }
+
+        updateLiveDispatchCardUI();
+        renderSriLankaMap();
+      }, 900);
+    }
+
+    function toggleDispatchSpeed() {
+      dispatchSpeedMultiplier = dispatchSpeedMultiplier === 1 ? 4 : 1;
+      const lbl = document.getElementById('simSpeedLabel');
+      if (lbl) lbl.textContent = dispatchSpeedMultiplier === 1 ? '1x Live' : '4x Fast Sim';
+    }
+
+    function sendQuickRiderMessage() {
+      if (!liveTrackingState) return;
+      showAlert(`Message sent to ${liveTrackingState.cleanerName}: "Hi, I am at ${customerPin.label}. Please call when you reach the gate."`, 'info');
+    }
+
+    async function completeCurrentTrackedOrder() {
+      if (!liveTrackingState) return;
+      const orderId = liveTrackingState.orderId;
+      stopLiveDispatchTracking();
+      await cleanerCompleteJobWithPayment(orderId);
+    }
+
+    function stopLiveDispatchTracking() {
+      if (dispatchTimer) {
+        clearInterval(dispatchTimer);
+        dispatchTimer = null;
+      }
+      liveTrackingState = null;
+      const card = document.getElementById('pickmeLiveDispatchCard');
+      if (card) card.classList.add('hidden');
+      renderSriLankaMap();
+    }
+
+    function updateLiveDispatchCardUI() {
+      const card = document.getElementById('pickmeLiveDispatchCard');
+      if (!card) return;
+
+      if (!liveTrackingState) {
+        card.classList.add('hidden');
+        return;
+      }
+
+      card.classList.remove('hidden');
+      const st = liveTrackingState;
+      const progressRatio = st.stepIndex / (st.waypoints.length - 1);
+      const barPct = Math.max(20, Math.round(25 + progressRatio * 75));
+
+      document.getElementById('liveTrackOrderId').textContent = st.orderId;
+      document.getElementById('liveTrackCleanerName').textContent = st.cleanerName;
+      document.getElementById('liveTrackCleanerService').textContent = st.service;
+      document.getElementById('liveTrackPaymentMethod').textContent = st.paymentMethod;
+      document.getElementById('liveTrackRemainingKm').textContent = `${st.remainingKm} km`;
+      document.getElementById('liveTrackProgressBar').style.width = `${barPct}%`;
+
+      const callBtn = document.getElementById('liveTrackCallBtn');
+      if (callBtn) callBtn.href = `tel:${st.cleanerPhone || '+94770000000'}`;
+
+      const stageBadge = document.getElementById('liveTrackStageBadge');
+      const etaCountdown = document.getElementById('liveTrackEtaCountdown');
+
+      if (st.stage === 4) {
+        stageBadge.textContent = '4. Arrived & Cleaning In Progress';
+        etaCountdown.textContent = 'Arrived at your location';
+      } else if (st.stage === 3) {
+        stageBadge.textContent = '3. Arriving Now';
+        etaCountdown.textContent = 'Less than 1 min away';
+      } else {
+        stageBadge.textContent = '2. Cleaner On The Way';
+        etaCountdown.textContent = `Arriving in ~${st.remainingMinutes} mins`;
+      }
+
+      // Update 4-step text highlights
+      const s1 = document.getElementById('stepLabel1');
+      const s2 = document.getElementById('stepLabel2');
+      const s3 = document.getElementById('stepLabel3');
+      const s4 = document.getElementById('stepLabel4');
+      if (s1) s1.className = 'text-brand';
+      if (s2) s2.className = st.stage >= 2 ? 'text-center text-brand' : 'text-center';
+      if (s3) s3.className = st.stage >= 3 ? 'text-center text-brand' : 'text-center';
+      if (s4) s4.className = st.stage >= 4 ? 'text-right text-brand' : 'text-right';
+    }
+
+    // =========================================================================
+    // SUPABASE DATA LAYER (single source of truth - no localStorage)
+    // =========================================================================
+    function setSyncStatus(label) {
+      const el = document.getElementById('dbSyncBadge');
+      if (el) el.textContent = label;
+    }
+
+    function normalizeCleanerRow(row) {
+      const locMeta = SRI_LANKA_LOCATIONS[row.area] || SRI_LANKA_LOCATIONS['Colombo'];
+      const lat = Number(row.lat ?? locMeta.lat);
+      const lng = Number(row.lng ?? locMeta.lng);
+      return {
+        id: safeText(row.id),
+        name: safeText(row.name),
+        phone: safeText(row.phone),
+        nic: safeText(row.nic),
+        service: safeText(row.service),
+        hourlyRate: Number(row.hourly_rate ?? row.hourlyRate ?? 1500),
+        area: safeText(row.area),
+        status: row.status === 'Busy' ? 'Busy' : 'Free',
+        bankName: safeText(row.bank_name ?? row.bankName ?? 'Bank Account'),
+        accountNo: safeText(row.account_no ?? row.accountNo ?? 'N/A'),
+        accountHolder: safeText(row.account_holder ?? row.accountHolder ?? row.name),
+        regFeePaid: Number(row.reg_fee_paid ?? row.regFeePaid ?? REGISTRATION_FEE_LKR),
+        lat,
+        lng,
+        baseLat: lat,
+        baseLng: lng,
+        patrolAngle: Math.random() * Math.PI * 2
+      };
+    }
+
+    function normalizeOrderRow(row) {
+      const total = Number(row.total_amount ?? row.total ?? 0);
+      const fee = Number(row.platform_fee_20 ?? row.platformFee ?? Math.round(total * PLATFORM_COMMISSION_RATE));
+      const payout = Number(row.cleaner_payout_80 ?? row.sellerPayout ?? (total - fee));
+      const pm = String(row.payment_method ?? row.paymentMethod ?? 'Cash');
+      return {
+        id: safeText(row.id),
+        cleanerId: safeText(row.cleaner_id ?? row.cleanerId),
+        cleanerName: safeText(row.cleaner_name ?? row.cleanerName),
+        cleanerPhone: safeText(row.cleaner_phone ?? row.cleanerPhone ?? ''),
+        customerName: safeText(row.customer_name ?? row.customerName ?? 'Customer'),
+        service: safeText(row.service),
+        hours: Number(row.hours ?? 1),
+        customerArea: safeText(row.customer_area ?? row.customerArea),
+        paymentMethod: pm === 'Card' ? 'Card' : 'Cash',
+        total,
+        platformFee: fee,
+        sellerPayout: payout,
+        etaMinutes: Number(row.eta_minutes ?? row.etaMinutes ?? 15),
+        distanceKm: Number(row.distance_km ?? row.distanceKm ?? 5.0),
+        rating: Number(row.rating ?? 0),
+        tip: Number(row.tip ?? 0),
+        ratingTags: Array.isArray(row.rating_tags ?? row.ratingTags) ? (row.rating_tags ?? row.ratingTags).map(safeText) : [],
+        status: row.status === 'Completed' ? 'Completed' : 'Active'
+      };
+    }
+
+    // ---- generic safe upsert -------------------------------------------------
+    async function supabaseSave(table, row, label) {
+      if (!supabaseClient) {
+        setSyncStatus('Offline - NOT saved');
+        showAlert('Supabase is not connected, so this change was NOT saved.', 'warning');
+        return false;
+      }
+      try {
+        const { error } = await supabaseClient.from(table).upsert(row);
+        if (error) throw error;
+        setSyncStatus('Supabase Live');
+        return true;
+      } catch (e) {
+        console.error(`Supabase save failed (${table})`, e);
+        setSyncStatus('Supabase Error');
+        showAlert(`Could not save ${label} to Supabase: ${e.message || e}. Run supabase_setup.sql in the Supabase SQL Editor.`, 'warning');
+        return false;
+      }
+    }
+
+    function syncCleanerToSupabase(cleaner) {
+      return supabaseSave('cleaners', {
+        id: cleaner.id,
+        name: cleaner.name,
+        phone: cleaner.phone,
+        nic: cleaner.nic,
+        service: cleaner.service,
+        hourly_rate: cleaner.hourlyRate,
+        area: cleaner.area,
+        status: cleaner.status,
+        lat: cleaner.baseLat ?? cleaner.lat,
+        lng: cleaner.baseLng ?? cleaner.lng,
+        bank_name: cleaner.bankName,
+        account_no: cleaner.accountNo,
+        account_holder: cleaner.accountHolder,
+        reg_fee_paid: cleaner.regFeePaid
+      }, 'cleaner');
+    }
+
+    function syncOrderToSupabase(order) {
+      return supabaseSave('cleaning_orders', {
+        id: order.id,
+        cleaner_id: order.cleanerId,
+        cleaner_name: order.cleanerName,
+        cleaner_phone: order.cleanerPhone,
+        customer_name: order.customerName,
+        service: order.service,
+        hours: order.hours,
+        customer_area: order.customerArea,
+        payment_method: order.paymentMethod,
+        total_amount: order.total,
+        platform_fee_20: order.platformFee,
+        cleaner_payout_80: order.sellerPayout,
+        eta_minutes: order.etaMinutes,
+        distance_km: order.distanceKm,
+        status: order.status,
+        rating: order.rating || 0,
+        tip: order.tip || 0,
+        rating_tags: order.ratingTags || []
+      }, 'order');
+    }
+
+    // ---- read everything from Supabase ---------------------------------------
+    async function fetchRemoteData() {
+      if (!supabaseClient) {
+        setSyncStatus('Offline - NOT saved');
+        return false;
+      }
+      try {
+        const [clnRes, ordRes] = await Promise.all([
+          supabaseClient.from('cleaners').select('*').order('created_at', { ascending: false }),
+          supabaseClient.from('cleaning_orders').select('*').order('created_at', { ascending: false })
+        ]);
+        if (clnRes.error) throw clnRes.error;
+        if (ordRes.error) throw ordRes.error;
+
+        // keep the on-screen patrol position of Free cleaners so the map doesn't jump
+        const oldById = new Map(cleaners.map(c => [c.id, c]));
+        cleaners = clnRes.data.map(normalizeCleanerRow).map(c => {
+          const old = oldById.get(c.id);
+          if (old && old.status === 'Free' && c.status === 'Free') {
+            return { ...c, lat: old.lat, lng: old.lng, patrolAngle: old.patrolAngle };
+          }
+          return c;
+        });
+        orders = ordRes.data.map(normalizeOrderRow);
+        setSyncStatus('Supabase Live');
+        return true;
+      } catch (e) {
+        console.error('Supabase load failed', e);
+        setSyncStatus('Supabase Error');
+        showAlert(`Could not load data from Supabase: ${e.message || e}. Run supabase_setup.sql in the Supabase SQL Editor.`, 'warning');
+        return false;
+      }
+    }
+
+    // ---- realtime: other phones / admin panel update instantly ----------------
+    let realtimeChannel = null;
+    let remoteRefreshTimer = null;
+    function scheduleRemoteRefresh() {
+      clearTimeout(remoteRefreshTimer);
+      remoteRefreshTimer = setTimeout(async () => {
+        if (isDraggingPin) return;
+        if (await fetchRemoteData()) {
+          ensureValidSelections();
+          renderAll();
+        }
+      }, 500);
+    }
+    function startRealtimeSync() {
+      if (!supabaseClient || realtimeChannel) return;
+      try {
+        realtimeChannel = supabaseClient
+          .channel('cleanme-live')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'cleaners' }, scheduleRemoteRefresh)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'cleaning_orders' }, scheduleRemoteRefresh)
+          .subscribe();
+      } catch (e) {
+        console.warn('Realtime unavailable', e);
+      }
+    }
+
+    async function loadInitialData() {
+      cleaners = [];
+      orders = [];
+      await fetchRemoteData();
+      ensureValidSelections();
+      startRealtimeSync();
+    }
+
+    async function clearAllRecords() {
+      if (!supabaseClient) {
+        showAlert('Supabase is not connected.', 'warning');
+        return;
+      }
+      try {
+        const o = await supabaseClient.from('cleaning_orders').delete().neq('id', '');
+        if (o.error) throw o.error;
+        const c = await supabaseClient.from('cleaners').delete().neq('id', '');
+        if (c.error) throw c.error;
+      } catch (e) {
+        showAlert(`Could not clear Supabase records: ${e.message || e}`, 'warning');
+        return;
+      }
+      stopLiveDispatchTracking();
+      cleaners = [];
+      orders = [];
+      selectedFreeCleanerId = null;
+      activeAdminSellerId = null;
+      renderAll();
+      showAlert('All records cleared from Supabase.', 'info');
+    }
+
+    function getFreeCleaners() {
+      return cleaners.filter(c => c.status === 'Free');
+    }
+
+    function ensureValidSelections() {
+      const freeList = getFreeCleaners();
+      if (!freeList.some(c => c.id === selectedFreeCleanerId)) {
+        selectedFreeCleanerId = freeList.length > 0 ? freeList[0].id : null;
+      }
+      if (!cleaners.some(c => c.id === activeAdminSellerId)) {
+        activeAdminSellerId = cleaners.length > 0 ? cleaners[0].id : null;
+      }
+    }
+
+    // =========================================================================
+    // LOGIN HANDLERS (USER / CLEANER / WEB ADMIN)
+    // =========================================================================
+    function updateSessionPill() {
+      const pill = document.getElementById('currentSessionPill');
+      if (!pill) return;
+      pill.innerHTML = `<i class="fa-solid fa-user-check"></i> ${sessionRole}${sessionUserName ? ': ' + sessionUserName : ''}`;
+    }
+
+    function handleUserLogin(e) {
+      e.preventDefault();
+      const name = safeText(document.getElementById('userLoginName').value);
+      sessionRole = 'User';
+      isWebAdminAuthenticated = false;
+      sessionCleanerId = null;
+      sessionUserName = name;
+      updateSessionPill();
+      navigateTo('home');
+      showAlert(`Welcome ${name}! Logged in as User. Tap the map or use Live GPS to book a Free cleaner.`, 'success');
+    }
+
+    function handleCleanerLogin(e) {
+      e.preventDefault();
+      const typed = document.getElementById('cleanerLoginIdOrPhone').value.trim().toLowerCase();
+      const selId = document.getElementById('cleanerLoginSelect').value;
+
+      const normPhone = v => String(v).replace(/[\s-]/g, '').toLowerCase();
+      const matched = typed
+        ? cleaners.find(c => c.id.toLowerCase() === typed || normPhone(c.phone) === normPhone(typed))
+        : cleaners.find(c => c.id === selId);
+
+      if (!matched) {
+        showAlert('No registered cleaner found. Please register first (Rs. 250 fee).', 'warning');
+        return;
+      }
+
+      sessionRole = 'Cleaner';
+      sessionUserName = matched.name;
+      sessionCleanerId = matched.id;
+      isWebAdminAuthenticated = false;
+      activeAdminSellerId = matched.id;
+      updateSessionPill();
+      navigateTo('seller-admin', matched.id);
+      showAlert(`Logged in as Cleaner ${matched.name} (${matched.id}). Welcome to your Order Admin Panel!`, 'success');
+    }
+
+    function handleWebAdminLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('adminLoginEmail').value.trim();
+      const pass = document.getElementById('adminLoginPass').value;
+      if (email === 'admin@cleanme.lk' && pass === 'admin123') {
+        isWebAdminAuthenticated = true;
+        sessionCleanerId = null;
+        sessionRole = 'Web Admin';
+        sessionUserName = email;
+        updateSessionPill();
+        navigateTo('web-admin');
+        showAlert('Web Admin login successful! Viewing all cleaners, 20% commissions, and Cash payments.', 'success');
+      } else {
+        showAlert('Invalid Web Admin credentials.', 'warning');
+      }
+    }
+
+    // =========================================================================
+    // DISTANCE & ETA CALCULATION (USING LIVE CUSTOMER PIN COORDINATES)
+    // =========================================================================
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const toRad = v => (v * Math.PI) / 180;
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function calculateCustomerToSellerRoute(cleaner) {
+      const clnCoord = SRI_LANKA_LOCATIONS[cleaner.area] || { lat: cleaner.lat, lng: cleaner.lng };
+      const straightKm = haversineKm(
+        customerPin.lat,
+        customerPin.lng,
+        cleaner.lat ?? clnCoord.lat,
+        cleaner.lng ?? clnCoord.lng
+      );
+      const roadKm = Math.max(0.8, Number((straightKm * 1.25).toFixed(1)));
+      const etaMinutes = Math.max(4, Math.round((roadKm / 28) * 60) + 4);
+
+      return { customerArea: customerPin.label, distanceKm: roadKm, etaMinutes };
+    }
+
+    // =========================================================================
+    // NAVIGATION
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.nav-link[data-nav="home"]').forEach(b => b.classList.add('is-active'));
+    });
+
+    function toggleMobileMenu(forceClose = false) {
+      const menu = document.getElementById('mobileMenu');
+      const btn = document.getElementById('hamburgerBtn');
+      if (!menu || !btn) return;
+      const open = forceClose ? false : !menu.classList.contains('open');
+      menu.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', String(open));
+      btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      document.getElementById('hamburgerIcon').classList.toggle('hidden', open);
+      document.getElementById('hamburgerClose').classList.toggle('hidden', !open);
+    }
+    window.addEventListener('resize', () => { if (window.innerWidth >= 1024) toggleMobileMenu(true); });
+
+    function navigateTo(viewName, sellerIdToOpen = null) {
+      // Access control for protected panels
+      if (viewName === 'web-admin' && !isWebAdminAuthenticated) {
+        showAlert('Please login as Web Admin to open this panel.', 'warning');
+        viewName = 'login';
+        sellerIdToOpen = null;
+      } else if (viewName === 'seller-admin') {
+        const isCleaner = sessionRole === 'Cleaner' && sessionCleanerId;
+        if (!isCleaner && !isWebAdminAuthenticated) {
+          showAlert('Please login (or register) as a Cleaner to open the Order Panel.', 'warning');
+          viewName = 'login';
+          sellerIdToOpen = null;
+        } else if (isCleaner && !isWebAdminAuthenticated) {
+          sellerIdToOpen = sessionCleanerId; // cleaners can only open their own panel
+        }
+      }
+      if (sellerIdToOpen) activeAdminSellerId = sellerIdToOpen;
+      document.querySelectorAll('.nav-link').forEach(b => b.classList.toggle('is-active', b.dataset.nav === viewName));
+      toggleMobileMenu(true);
+
+      const views = {
+        login: document.getElementById('view-login'),
+        home: document.getElementById('view-home'),
+        register: document.getElementById('view-register'),
+        'seller-admin': document.getElementById('view-seller-admin'),
+        'web-admin': document.getElementById('view-web-admin')
+      };
+
+      Object.keys(views).forEach(k => {
+        if (views[k]) views[k].classList.toggle('hidden', k !== viewName);
+      });
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      renderAll();
+    }
+
+    // =========================================================================
+    // CLEANER REGISTRATION (WITH ACCOUNT DETAILS + RS. 250 FEE)
+    // =========================================================================
+    async function handleCleanerRegistration(event) {
+      event.preventDefault();
+
+      const name = safeText(document.getElementById('regName').value);
+      const phone = document.getElementById('regPhone').value.replace(/[^0-9+\s-]/g, '').trim();
+      const nic = safeText(document.getElementById('regNic').value);
+      const service = document.getElementById('regService').value;
+      const hourlyRate = parseInt(document.getElementById('regRate').value, 10) || 1500;
+      const area = document.getElementById('regArea').value;
+      const bankName = safeText(document.getElementById('regBankName').value);
+      const accountNo = safeText(document.getElementById('regAccountNo').value);
+      const accountHolder = safeText(document.getElementById('regAccountHolder').value);
+      const feeChecked = document.getElementById('regFeePaidConfirm').checked;
+      const statusInput = document.querySelector('input[name="regStatus"]:checked');
+      const status = statusInput ? statusInput.value : 'Free';
+
+      if (!name || !phone || !nic || !bankName || !accountNo || !accountHolder || !feeChecked) {
+        showAlert('Please complete all details, account info, and confirm the Rs. 250 registration fee.', 'warning');
+        return;
+      }
+
+      const loc = SRI_LANKA_LOCATIONS[area] || SRI_LANKA_LOCATIONS['Colombo'];
+      const startLat = Number((loc.lat + (Math.random() - 0.5) * 0.025).toFixed(5));
+      const startLng = Number((loc.lng + (Math.random() - 0.5) * 0.025).toFixed(5));
+
+      const newCleaner = {
+        id: generateUniqueId('cln-', cleaners.map(c => c.id)),
+        name,
+        phone,
+        nic,
+        service,
+        hourlyRate,
+        area,
+        status,
+        bankName,
+        accountNo,
+        accountHolder,
+        regFeePaid: REGISTRATION_FEE_LKR,
+        lat: startLat,
+        lng: startLng,
+        baseLat: startLat,
+        baseLng: startLng,
+        patrolAngle: Math.random() * Math.PI * 2
+      };
+
+      cleaners.unshift(newCleaner);
+      activeAdminSellerId = newCleaner.id;
+      sessionRole = 'Cleaner';
+      sessionCleanerId = newCleaner.id;
+      isWebAdminAuthenticated = false;
+      sessionUserName = newCleaner.name;
+      if (status === 'Free') selectedFreeCleanerId = newCleaner.id;
+
+      await syncCleanerToSupabase(newCleaner);
+      document.getElementById('cleanerRegistrationForm').reset();
+      document.getElementById('regRate').value = 1500;
+      document.getElementById('regFeePaidConfirm').checked = true;
+
+      updateSessionPill();
+      renderAll();
+      navigateTo('seller-admin', newCleaner.id);
+      showAlert(
+        `${name} registered! Rs. 250 registration fee recorded. Seller ID: ${newCleaner.id}. Opened your Cleaner Order Admin Panel.`,
+        'success'
+      );
+    }
+
+    // =========================================================================
+    // ORDER PLACEMENT & JOB COMPLETION (20% COMMISSION ON CASH & CARD)
+    // =========================================================================
+    function selectFreeCleaner(cleanerId) {
+      const cleaner = getFreeCleaners().find(c => c.id === cleanerId);
+      if (!cleaner) return;
+      selectedFreeCleanerId = cleaner.id;
+      const svcSel = document.getElementById('orderServiceSelect');
+      if (svcSel) svcSel.value = cleaner.service;
+      renderAll();
+      if (slMap) {
+        slMap.setView([cleaner.lat, cleaner.lng], Math.max(slMap.getZoom(), 10));
+      }
+    }
+
+    function changeOrderHours(delta) {
+      const next = orderHours + delta;
+      if (next < 1 || next > 12) return;
+      orderHours = next;
+      updateOrderSummary();
+    }
+
+    function setPaymentMethod(method) {
+      paymentMethod = method === 'Card' ? 'Card' : 'Cash';
+      const cashBtn = document.getElementById('payCashBtn');
+      const cardBtn = document.getElementById('payCardBtn');
+      if (cashBtn && cardBtn) {
+        if (paymentMethod === 'Cash') {
+          cashBtn.className = 'py-2.5 px-3 rounded-xl border border-brand bg-brand text-white text-xs font-bold transition';
+          cardBtn.className = 'py-2.5 px-3 rounded-xl border border-blue-200 bg-white text-slate-700 hover:border-brand text-xs font-bold transition';
+        } else {
+          cardBtn.className = 'py-2.5 px-3 rounded-xl border border-brand bg-brand text-white text-xs font-bold transition';
+          cashBtn.className = 'py-2.5 px-3 rounded-xl border border-blue-200 bg-white text-slate-700 hover:border-brand text-xs font-bold transition';
+        }
+      }
+      updateOrderSummary();
+    }
+
+    function handleCustomerAreaChange() {
+      const area = document.getElementById('customerAreaSelect')?.value;
+      const coords = SRI_LANKA_LOCATIONS[area] || SRI_LANKA_LOCATIONS['Colombo'];
+      const searchInput = document.getElementById('slLocationSearchInput');
+      if (searchInput) searchInput.value = area;
+      setCustomerPinCoordinates(coords.lat, coords.lng, area, false, false);
+    }
+
+    function getSelectedFreeCleaner() {
+      return getFreeCleaners().find(c => c.id === selectedFreeCleanerId) || null;
+    }
+
+    function updateOrderSummary() {
+      const cleaner = getSelectedFreeCleaner();
+      const rate = cleaner ? cleaner.hourlyRate : 1500;
+      const total = rate * orderHours;
+      const platformFee = Math.round(total * PLATFORM_COMMISSION_RATE);
+      const sellerPayout = total - platformFee;
+
+      const hoursEl = document.getElementById('orderHoursValue');
+      const totalEl = document.getElementById('orderTotalPrice');
+      const rateEl = document.getElementById('orderRateNote');
+      const feeEl = document.getElementById('commission20Text');
+      const payEl = document.getElementById('seller80Text');
+      const btn = document.getElementById('placeOrderBtn');
+      const btnText = document.getElementById('placeOrderBtnText');
+
+      if (hoursEl) hoursEl.textContent = orderHours;
+      if (totalEl) totalEl.textContent = `Rs. ${total.toLocaleString()}`;
+      if (rateEl) rateEl.textContent = `Rs. ${rate.toLocaleString()} / hr`;
+      if (feeEl) feeEl.textContent = `Rs. ${platformFee.toLocaleString()}`;
+      if (payEl) payEl.textContent = `Rs. ${sellerPayout.toLocaleString()}`;
+
+      if (liveTrackingState) {
+        const badgeTitle = document.getElementById('mapEtaBadgeTitle');
+        const badgeSub = document.getElementById('mapEtaBadgeSub');
+        if (badgeTitle) badgeTitle.textContent = `Live Tracking: ${liveTrackingState.cleanerName}`;
+        if (badgeSub) badgeSub.textContent = `ETA ~${liveTrackingState.remainingMinutes} mins (${liveTrackingState.remainingKm} km remaining)`;
+      }
+
+      if (!cleaner) {
+        const etaEl = document.getElementById('etaMinutesText');
+        const distEl = document.getElementById('distanceKmText');
+        const badgeTitle = document.getElementById('mapEtaBadgeTitle');
+        const badgeSub = document.getElementById('mapEtaBadgeSub');
+        if (etaEl) etaEl.textContent = 'No Free cleaner';
+        if (distEl) distEl.textContent = '-- km';
+        if (!liveTrackingState) {
+          if (badgeTitle) badgeTitle.textContent = 'No Free Registered Cleaners';
+          if (badgeSub) badgeSub.textContent = 'Register a cleaner (Rs. 250) and set Free to show on map';
+        }
+        if (btn) {
+          btn.disabled = true;
+          btn.className = 'w-full py-3.5 px-4 rounded-xl bg-blue-100 text-slate-500 font-bold text-sm cursor-not-allowed flex items-center justify-center gap-2';
+        }
+        if (btnText) btnText.textContent = 'Register a Free Cleaner First';
+        return;
+      }
+
+      const route = calculateCustomerToSellerRoute(cleaner);
+      const etaEl = document.getElementById('etaMinutesText');
+      const distEl = document.getElementById('distanceKmText');
+      const badgeTitle = document.getElementById('mapEtaBadgeTitle');
+      const badgeSub = document.getElementById('mapEtaBadgeSub');
+
+      if (etaEl) etaEl.textContent = `~${route.etaMinutes} mins away`;
+      if (distEl) distEl.textContent = `${route.distanceKm} km`;
+      if (!liveTrackingState) {
+        if (badgeTitle) badgeTitle.textContent = `${cleaner.name} arrives in ~${route.etaMinutes} mins`;
+        if (badgeSub) badgeSub.textContent = `Distance: ${route.distanceKm} km (${cleaner.area} → ${route.customerArea})`;
+      }
+
+      if (btn) {
+        btn.disabled = false;
+        btn.className = 'w-full py-3.5 px-4 rounded-xl bg-brand hover:bg-brand-dark text-white font-bold text-sm shadow-sm transition cursor-pointer flex items-center justify-center gap-2';
+      }
+      if (btnText) btnText.textContent = `Book & Track Live (${paymentMethod}) • 20% Fee Rs. ${platformFee.toLocaleString()}`;
+    }
+
+    async function placeCleaningOrder() {
+      const cleaner = getSelectedFreeCleaner();
+      if (!cleaner || cleaner.status !== 'Free') {
+        showAlert('Please register or select a Free cleaner first.', 'warning');
+        return;
+      }
+
+      const route = calculateCustomerToSellerRoute(cleaner);
+      const service = document.getElementById('orderServiceSelect')?.value || cleaner.service;
+      const total = cleaner.hourlyRate * orderHours;
+      const platformFee = Math.round(total * PLATFORM_COMMISSION_RATE);
+      const sellerPayout = total - platformFee;
+
+      const newOrder = {
+        id: generateUniqueId('ORD-', orders.map(o => o.id)),
+        cleanerId: cleaner.id,
+        cleanerName: cleaner.name,
+        cleanerPhone: cleaner.phone,
+        customerName: safeText(sessionUserName) || 'Customer',
+        service,
+        hours: orderHours,
+        customerArea: customerPin.label,
+        paymentMethod,
+        total,
+        platformFee,
+        sellerPayout,
+        etaMinutes: route.etaMinutes,
+        distanceKm: route.distanceKm,
+        status: 'Active'
+      };
+
+      // Capture cleaner's current map coordinates before switching status to Busy
+      const dispatchedCleanerSnapshot = { ...cleaner };
+
+      cleaner.status = 'Busy';
+      orders.unshift(newOrder);
+      activeAdminSellerId = cleaner.id;
+      ensureValidSelections();
+
+      await Promise.all([
+        syncOrderToSupabase(newOrder),
+        syncCleanerToSupabase(cleaner)
+      ]);
+
+      // Launch PickMe-style Live Dispatch & Movement Tracker on the Sri Lanka Map
+      startLiveOrderDispatch(newOrder, dispatchedCleanerSnapshot);
+
+      renderAll();
+      showAlert(
+        `Order ${newOrder.id} dispatched! Watch ${cleaner.name} moving live toward ${customerPin.label} (~${route.etaMinutes} mins). 20% commission = Rs. ${platformFee.toLocaleString()}.`,
+        'success'
+      );
+    }
+
+    function switchActiveSellerAdmin(sellerId) {
+      const allowed = (sessionRole === 'Cleaner' && !isWebAdminAuthenticated) ? sellerId === sessionCleanerId : true;
+      if (allowed && cleaners.some(c => c.id === sellerId)) {
+        activeAdminSellerId = sellerId;
+        renderSellerAdminPanel();
+      }
+    }
+
+    async function cleanerCompleteJobWithPayment(orderId, chosenMethod = null) {
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
+
+      if (chosenMethod) {
+        order.paymentMethod = chosenMethod === 'Card' ? 'Card' : 'Cash';
+      }
+      order.total = Number(order.total || 0);
+      order.platformFee = Math.round(order.total * PLATFORM_COMMISSION_RATE);
+      order.sellerPayout = order.total - order.platformFee;
+      order.status = 'Completed';
+
+      if (liveTrackingState && liveTrackingState.orderId === orderId) {
+        stopLiveDispatchTracking();
+      }
+
+      const seller = cleaners.find(c => c.id === order.cleanerId);
+      if (seller) {
+        seller.status = 'Free';
+        selectedFreeCleanerId = seller.id;
+        await syncCleanerToSupabase(seller);
+      }
+
+      await syncOrderToSupabase(order);
+      ensureValidSelections();
+      renderAll();
+      showAlert(
+        `Job ${order.id} completed via ${order.paymentMethod}! Cleaner is now Free on the live map.`,
+        'success'
+      );
+      openTripSummary(order.id);
+    }
+
+    async function sellerSetStatus(sellerId, nextStatus) {
+      const seller = cleaners.find(c => c.id === sellerId);
+      if (!seller) return;
+
+      seller.status = nextStatus === 'Free' ? 'Free' : 'Busy';
+      if (seller.status === 'Free') selectedFreeCleanerId = seller.id;
+      ensureValidSelections();
+      await syncCleanerToSupabase(seller);
+      renderAll();
+      showAlert(`${seller.name}'s status is now ${seller.status}.`, 'info');
+    }
+
+    // =========================================================================
+    // RENDER ALL VIEWS
+    // =========================================================================
+    function renderAll() {
+      const freeSellers = getFreeCleaners();
+      const freeCounter = document.getElementById('freeCleanersCounter');
+      const regBadge = document.getElementById('regCountBadge');
+      if (freeCounter) freeCounter.textContent = freeSellers.length;
+      if (regBadge) regBadge.textContent = cleaners.length;
+
+      // Populate cleaner login dropdown
+      const clnLoginSel = document.getElementById('cleanerLoginSelect');
+      if (clnLoginSel) {
+        clnLoginSel.innerHTML = cleaners.length
+          ? cleaners.map(c => `<option value="${c.id}">${c.name} (${c.id})</option>`).join('')
+          : `<option value="">No cleaners registered yet</option>`;
+      }
+
+      renderSriLankaMap();
+      renderSelectedFreeCleanerPanels();
+      renderFreeCleanersDirectory();
+      renderRegisteredPreview();
+      renderOrdersList();
+      renderSellerAdminPanel();
+      renderWebAdminPanel();
+      updateOrderSummary();
+    }
+
+    function renderSelectedFreeCleanerPanels() {
+      const c = getSelectedFreeCleaner();
+      const box = document.getElementById('selectedCleanerBox');
+      const bar = document.getElementById('mapSelectedCleanerBar');
+
+      if (!c) {
+        if (box) box.innerHTML = `<div class="text-xs text-slate-700">No <strong>Free</strong> cleaners on the map yet. Register a cleaner (Rs. 250 fee) and set status to <strong>Free</strong>.</div>`;
+        if (bar) bar.innerHTML = `<div class="text-xs text-slate-600">No Free cleaner displayed on the Sri Lanka map.</div>`;
+        return;
+      }
+
+      const route = calculateCustomerToSellerRoute(c);
+      if (box) {
+        box.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="text-[11px] font-bold uppercase tracking-wide text-brand">Selected Free Cleaner</div>
+              <div class="font-bold text-base text-slate-900 mt-0.5">${c.name} ${cleanerAverageRating(c.id) ? `<span class="text-xs font-bold text-amber-500"><i class="fa-solid fa-star"></i> ${cleanerAverageRating(c.id)}</span>` : '<span class="text-[11px] font-semibold text-slate-400">New</span>'}</div>
+              <div class="text-xs text-slate-600 mt-0.5">${c.service} • ${c.area} • <strong>Rs. ${c.hourlyRate.toLocaleString()}/hr</strong></div>
+              <div class="text-[11px] text-brand font-semibold mt-1">
+                <i class="fa-solid fa-clock mr-1"></i>Arrives in ~${route.etaMinutes} mins (${route.distanceKm} km to ${route.customerArea})
+              </div>
+            </div>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand text-white">Free</span>
+          </div>
+        `;
+      }
+
+      if (bar) {
+        bar.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center font-bold shrink-0">
+              <i class="fa-solid fa-route"></i>
+            </div>
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-bold text-sm text-slate-900">${c.name}</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-brand text-white">Free</span>
+                <span class="text-xs font-bold text-brand">~${route.etaMinutes} mins (${route.distanceKm} km)</span>
+              </div>
+              <div class="text-xs text-slate-600">
+                ${c.service} in <strong>${c.area}</strong> • Rs. ${c.hourlyRate.toLocaleString()}/hr • ID: <span class="font-mono">${c.id}</span>
+              </div>
+            </div>
+          </div>
+          <button type="button" onclick="navigateTo('seller-admin', '${c.id}')" class="px-3 py-1.5 rounded-xl bg-white border border-blue-200 hover:border-brand text-xs font-bold text-brand whitespace-nowrap transition">
+            Cleaner Order Panel
+          </button>
+        `;
+      }
+    }
+
+    function renderFreeCleanersDirectory() {
+      const list = document.getElementById('cleanersDirectoryList');
+      if (!list) return;
+      const freeSellers = getFreeCleaners();
+      if (freeSellers.length === 0) {
+        list.innerHTML = `<p class="text-xs text-slate-500">No Free cleaners available right now.</p>`;
+        return;
+      }
+
+      // Sort by nearest ETA to customer pin like PickMe
+      const withRoutes = freeSellers
+        .map(c => ({ cleaner: c, route: calculateCustomerToSellerRoute(c) }))
+        .sort((a, b) => a.route.etaMinutes - b.route.etaMinutes);
+
+      list.innerHTML = withRoutes.map(({ cleaner: c, route }) => {
+        const isSelected = c.id === selectedFreeCleanerId;
+        return `
+          <div onclick="selectFreeCleaner('${c.id}')" class="p-3 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2 ${
+            isSelected ? 'border-brand bg-brand-light' : 'border-blue-100 bg-white hover:border-blue-300'
+          }">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-sm text-slate-900 truncate">${c.name}</span>
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand text-white">Free</span>
+              </div>
+              <div class="text-xs text-slate-600 truncate mt-0.5">
+                ${c.service} • ${c.area} • <strong>Rs. ${c.hourlyRate.toLocaleString()}/hr</strong>
+              </div>
+              <div class="text-[11px] font-semibold text-brand mt-0.5">
+                ~${route.etaMinutes} mins away (${route.distanceKm} km)
+              </div>
+            </div>
+            <span class="text-xs font-bold text-brand shrink-0">Select</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRegisteredPreview() {
+      const container = document.getElementById('registeredPreviewList');
+      if (!container) return;
+      if (cleaners.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500">No cleaners registered yet.</p>`;
+        return;
+      }
+
+      container.innerHTML = cleaners.map(c => `
+        <div class="p-3 rounded-xl border border-blue-100 bg-brand-light/40 flex items-center justify-between gap-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm text-slate-900">${c.name}</span>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-blue-200 text-slate-700">${c.id}</span>
+            </div>
+            <div class="text-xs text-slate-600">${c.service} • ${c.area} • Rs. ${c.hourlyRate.toLocaleString()}/hr</div>
+            <div class="text-[11px] text-slate-500">Account: ${c.bankName} (****${String(c.accountNo).slice(-3)}) • Fee Paid: Rs. ${c.regFeePaid || 250} • <strong>${c.status}</strong></div>
+          </div>
+          <button type="button" onclick="navigateTo('seller-admin', '${c.id}')" class="px-2.5 py-1.5 rounded-lg bg-brand text-white text-xs font-bold shrink-0">
+            Order Panel
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function renderOrdersList() {
+      const list = document.getElementById('ordersHistoryList');
+      const badge = document.getElementById('ordersCountBadge');
+      if (badge) badge.textContent = `${orders.length} ${orders.length === 1 ? 'Order' : 'Orders'}`;
+      if (!list) return;
+
+      if (orders.length === 0) {
+        list.innerHTML = `<p class="text-xs text-slate-500">No orders placed yet.</p>`;
+        return;
+      }
+
+      list.innerHTML = orders.map(o => {
+        const isActive = o.status === 'Active';
+        return `
+          <div class="p-3 rounded-xl border border-blue-100 bg-brand-light/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-bold text-xs text-brand">${o.id}</span>
+                <span class="font-bold text-sm text-slate-900">${o.cleanerName}</span>
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white border border-blue-200 text-slate-800">${o.paymentMethod}</span>
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                  isActive ? 'bg-brand text-white' : 'bg-slate-900 text-white'
+                }">${o.status}</span>
+              </div>
+              <div class="text-xs text-slate-600 mt-0.5">
+                ${o.service} (${o.hours} hr) • To: ${o.customerArea} • Total: <strong>Rs. ${o.total.toLocaleString()}</strong>
+                • 20% Fee: <strong class="text-brand">Rs. ${o.platformFee.toLocaleString()}</strong> • Cleaner (80%): <strong>Rs. ${o.sellerPayout.toLocaleString()}</strong>${o.rating ? ` • <span class="text-amber-500 font-bold"><i class="fa-solid fa-star"></i> ${o.rating}</span>` : ''}${o.tip ? ` • Tip Rs. ${o.tip}` : ''}
+              </div>
+            </div>
+            ${
+              isActive
+                ? `<button type="button" onclick="cleanerCompleteJobWithPayment('${o.id}')" class="px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-dark text-white text-xs font-bold whitespace-nowrap transition">
+                     Complete Job (20% Fee)
+                   </button>`
+                : `<span class="text-xs font-semibold text-slate-500">Completed</span>`
+            }
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSellerAdminPanel() {
+      const select = document.getElementById('sellerAdminSelect');
+      const container = document.getElementById('sellerAdminContent');
+      if (!select || !container) return;
+
+      const panelCleaners = (sessionRole === 'Cleaner' && !isWebAdminAuthenticated)
+        ? cleaners.filter(c => c.id === sessionCleanerId)
+        : cleaners;
+
+      if (panelCleaners.length === 0) {
+        select.innerHTML = `<option value="">No Registered Cleaners</option>`;
+        container.innerHTML = `
+          <div class="lg:col-span-12 bg-white border border-blue-200 rounded-2xl p-6 text-center space-y-3">
+            <div class="font-bold text-base text-slate-900">No Cleaners Registered Yet</div>
+            <p class="text-xs text-slate-600">Register with your account details and Rs. 250 fee to open your Order Admin Panel.</p>
+            <button type="button" onclick="navigateTo('register')" class="px-4 py-2 rounded-xl bg-brand text-white text-xs font-bold">
+              Register Cleaner (Rs. 250)
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      select.innerHTML = panelCleaners.map(c =>
+        `<option value="${c.id}" ${c.id === activeAdminSellerId ? 'selected' : ''}>${c.name} (${c.id}) — ${c.status}</option>`
+      ).join('');
+
+      const seller = panelCleaners.find(c => c.id === activeAdminSellerId) || panelCleaners[0];
+      const sellerOrders = orders.filter(o => o.cleanerId === seller.id);
+      const completedOrders = sellerOrders.filter(o => o.status === 'Completed');
+      const totalCommission20 = completedOrders.reduce((s, o) => s + o.platformFee, 0);
+      const netSeller80 = completedOrders.reduce((s, o) => s + o.sellerPayout, 0);
+      const isFree = seller.status === 'Free';
+
+      container.innerHTML = `
+        <div class="lg:col-span-5 bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-4">
+          <div class="flex items-start justify-between gap-2 border-b border-blue-100 pb-3">
+            <div>
+              <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-brand-light text-brand border border-blue-200">${seller.id}</span>
+              <h2 class="text-xl font-extrabold text-slate-900 mt-1">${seller.name}</h2>
+              <div class="text-xs text-slate-600">${seller.service} • ${seller.area} • Rs. ${seller.hourlyRate.toLocaleString()}/hr</div>
+              <div class="text-xs text-slate-500 mt-1">
+                Account: <strong>${seller.bankName}</strong> • <span class="font-mono">${seller.accountNo}</span> (${seller.accountHolder})
+              </div>
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-bold ${
+              isFree ? 'bg-brand text-white' : 'bg-blue-50 text-slate-700 border border-blue-200'
+            }">${seller.status}</span>
+          </div>
+
+          <div class="space-y-2">
+            <div class="text-xs font-bold text-slate-700 uppercase tracking-wide">Map Status</div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <button type="button" onclick="sellerSetStatus('${seller.id}', 'Free')" class="py-2.5 px-3 rounded-xl font-bold text-xs transition ${
+                isFree ? 'bg-brand text-white shadow-sm' : 'bg-brand-light text-brand border border-blue-200'
+              }">
+                Free (Show on Map)
+              </button>
+              <button type="button" onclick="sellerSetStatus('${seller.id}', 'Busy')" class="py-2.5 px-3 rounded-xl font-bold text-xs transition ${
+                !isFree ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-700 border border-blue-200'
+              }">
+                Busy (Hide from Map)
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-2 border-t border-blue-100 text-center">
+            <div class="p-2.5 rounded-xl bg-brand-light">
+              <div class="text-[10px] font-bold text-brand">20% Commission Paid</div>
+              <div class="text-sm font-extrabold text-brand mt-0.5">Rs. ${totalCommission20.toLocaleString()}</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-brand-light">
+              <div class="text-[10px] font-bold text-slate-700">Your Earnings (80%)</div>
+              <div class="text-sm font-extrabold text-slate-900 mt-0.5">Rs. ${netSeller80.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-3">
+          <div class="flex items-center justify-between border-b border-blue-100 pb-3">
+            <h3 class="font-bold text-base text-slate-900">Orders for ${seller.name}</h3>
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-brand-light text-brand">${sellerOrders.length} Orders</span>
+          </div>
+
+          ${
+            sellerOrders.length === 0
+              ? `<p class="text-xs text-slate-500 py-4">No orders yet for ${seller.name}. Keep status <strong>Free</strong> to appear on the map.</p>`
+              : `<div class="space-y-2.5">
+                  ${sellerOrders.map(o => {
+                    const isActive = o.status === 'Active';
+                    return `
+                      <div class="p-3.5 rounded-xl border border-blue-100 bg-brand-light/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-bold text-xs text-brand">${o.id}</span>
+                            <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white border border-blue-200 text-slate-800">${o.paymentMethod}</span>
+                            <span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              isActive ? 'bg-brand text-white' : 'bg-slate-900 text-white'
+                            }">${o.status}</span>
+                          </div>
+                          <div class="text-xs text-slate-600 mt-1">
+                            ${o.service} • ${o.hours} hr • Location: ${o.customerArea} • ETA ~${o.etaMinutes || 15} mins
+                          </div>
+                          <div class="text-xs font-semibold text-slate-800 mt-1">
+                            Total: Rs. ${o.total.toLocaleString()} | 20% Fee: <span class="text-brand">Rs. ${o.platformFee.toLocaleString()}</span> | Your Payout (80%): <strong>Rs. ${o.sellerPayout.toLocaleString()}</strong>
+                          </div>
+                        </div>
+                        ${
+                          isActive
+                            ? `<div class="flex flex-col gap-1.5 shrink-0">
+                                 <button type="button" onclick="cleanerCompleteJobWithPayment('${o.id}', 'Cash')" class="px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-dark text-white text-xs font-bold">
+                                   Complete (Cash • -20%)
+                                 </button>
+                                 <button type="button" onclick="cleanerCompleteJobWithPayment('${o.id}', 'Card')" class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold">
+                                   Complete (Card • -20%)
+                                 </button>
+                               </div>`
+                            : `<span class="text-xs font-bold text-brand px-2.5 py-1 rounded-lg bg-white border border-blue-200">Completed</span>`
+                        }
+                      </div>
+                    `;
+                  }).join('')}
+                </div>`
+          }
+        </div>
+      `;
+    }
+
+    function renderWebAdminPanel() {
+      const sumEl = document.getElementById('webAdminSummaryCards');
+      const cashList = document.getElementById('webAdminCashOrdersList');
+      const cashBadge = document.getElementById('cashOrdersCountBadge');
+      const allOrdersEl = document.getElementById('webAdminAllOrdersList');
+      const cleanersEl = document.getElementById('webAdminCleanersList');
+      const authBadge = document.getElementById('webAdminAuthBadge');
+
+      if (authBadge) {
+        authBadge.textContent = isWebAdminAuthenticated ? 'Authenticated Web Admin' : 'Web Admin Overview';
+      }
+
+      const regFeeTotal = cleaners.length * REGISTRATION_FEE_LKR;
+      const completedOrders = orders.filter(o => o.status === 'Completed');
+      const commission20Total = completedOrders.reduce((s, o) => s + o.platformFee, 0);
+      const cashOrders = orders.filter(o => o.paymentMethod === 'Cash');
+      const cashGrossTotal = cashOrders.reduce((s, o) => s + o.total, 0);
+      const cashCommission20Total = cashOrders.filter(o => o.status === 'Completed').reduce((s, o) => s + o.platformFee, 0);
+
+      if (sumEl) {
+        sumEl.innerHTML = `
+          <div class="p-4 rounded-2xl bg-white border border-blue-200 shadow-sm">
+            <div class="text-[11px] font-bold text-slate-500">Registered Cleaners</div>
+            <div class="text-xl font-extrabold text-slate-900 mt-1">${cleaners.length}</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-blue-200 shadow-sm">
+            <div class="text-[11px] font-bold text-brand">Rs. 250 Reg Fees</div>
+            <div class="text-xl font-extrabold text-brand mt-1">Rs. ${regFeeTotal.toLocaleString()}</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-blue-200 shadow-sm">
+            <div class="text-[11px] font-bold text-brand">20% Order Commission</div>
+            <div class="text-xl font-extrabold text-brand mt-1">Rs. ${commission20Total.toLocaleString()}</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-blue-200 shadow-sm">
+            <div class="text-[11px] font-bold text-slate-700">Cash Orders Total</div>
+            <div class="text-xl font-extrabold text-slate-900 mt-1">Rs. ${cashGrossTotal.toLocaleString()}</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-blue-200 shadow-sm">
+            <div class="text-[11px] font-bold text-brand">Cash 20% Commission</div>
+            <div class="text-xl font-extrabold text-brand mt-1">Rs. ${cashCommission20Total.toLocaleString()}</div>
+          </div>
+        `;
+      }
+
+      if (cashBadge) {
+        cashBadge.textContent = `${cashOrders.length} Cash ${cashOrders.length === 1 ? 'Order' : 'Orders'}`;
+      }
+
+      if (cashList) {
+        if (cashOrders.length === 0) {
+          cashList.innerHTML = `<p class="text-slate-500">No Cash orders recorded yet.</p>`;
+        } else {
+          cashList.innerHTML = cashOrders.map(o => `
+            <div class="p-3 rounded-xl border border-blue-200 bg-brand-light/50 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span class="font-bold text-brand">${o.id}</span> • <strong>${o.cleanerName}</strong> (${o.cleanerId}) • Area: <strong>${o.customerArea}</strong> • Status: <strong>${o.status}</strong>
+                <div class="text-slate-600 mt-0.5">${o.service} (${o.hours} hr) • Cash Amount: <strong>Rs. ${o.total.toLocaleString()}</strong> • 20% Fee: <strong class="text-brand">Rs. ${o.platformFee.toLocaleString()}</strong> • Cleaner 80%: <strong>Rs. ${o.sellerPayout.toLocaleString()}</strong></div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full bg-brand text-white font-bold text-[11px]">CASH</span>
+            </div>
+          `).join('');
+        }
+      }
+
+      if (allOrdersEl) {
+        if (orders.length === 0) {
+          allOrdersEl.innerHTML = `<p class="text-slate-500">No orders yet.</p>`;
+        } else {
+          allOrdersEl.innerHTML = orders.map(o => `
+            <div class="p-3 rounded-xl border border-blue-100 bg-brand-light/30">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-brand">${o.id} • ${o.cleanerName}</span>
+                <span class="font-bold text-slate-800">${o.paymentMethod} • ${o.status}</span>
+              </div>
+              <div class="text-slate-600 mt-0.5">
+                ${o.service} (${o.hours} hr) • To: ${o.customerArea} • Total: <strong>Rs. ${o.total.toLocaleString()}</strong> • 20% Fee: <strong class="text-brand">Rs. ${o.platformFee.toLocaleString()}</strong> • 80%: <strong>Rs. ${o.sellerPayout.toLocaleString()}</strong>
+              </div>
+            </div>
+          `).join('');
+        }
+      }
+
+      if (cleanersEl) {
+        if (cleaners.length === 0) {
+          cleanersEl.innerHTML = `<p class="text-slate-500">No cleaners registered yet.</p>`;
+        } else {
+          cleanersEl.innerHTML = cleaners.map(c => `
+            <div class="p-3 rounded-xl border border-blue-100 bg-brand-light/30 space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-slate-900">${c.name} <span class="font-mono text-brand">(${c.id})</span></span>
+                <span class="px-2 py-0.5 rounded-full font-bold text-[11px] ${c.status === 'Free' ? 'bg-brand text-white' : 'bg-white border border-blue-200 text-slate-700'}">${c.status}</span>
+              </div>
+              <div class="text-slate-600">${c.service} • ${c.area} • Rs. ${c.hourlyRate.toLocaleString()}/hr • Phone: ${c.phone} • NIC: ${c.nic}</div>
+              <div class="text-slate-800 font-semibold">Bank: ${c.bankName} | Acct: <span class="font-mono">${c.accountNo}</span> (${c.accountHolder}) • Reg Fee: Rs. ${c.regFeePaid || 250}</div>
+            </div>
+          `).join('');
+        }
+      }
+    }
+
+    // =========================================================================
+    // PICKME-STYLE TRIP SUMMARY (RECEIPT + STAR RATING + TIP)
+    // =========================================================================
+    const STAR_LABELS = ['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent!'];
+    const RATING_TAGS = ['On time', 'Very clean', 'Polite', 'Great value', 'Careful with items'];
+    const TIP_OPTIONS = [0, 100, 200, 500];
+    let tripDraft = { orderId: null, rating: 0, tags: [], tip: 0 };
+
+    function openTripSummary(orderId) {
+      const o = orders.find(x => x.id === orderId);
+      if (!o) return;
+      tripDraft = { orderId, rating: 0, tags: [], tip: 0 };
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('tsOrderId', o.id); set('tsService', o.service);
+      set('tsTotal', `Rs. ${o.total.toLocaleString()}`);
+      set('tsPayMethod', o.paymentMethod);
+      set('tsCleaner', o.cleanerName); set('tsCleanerName', o.cleanerName);
+      set('tsArea', o.customerArea);
+      set('tsHours', `${o.hours} hr`);
+      set('tsDistance', `${o.distanceKm} km`);
+      set('tsFee', `Rs. ${o.platformFee.toLocaleString()}`);
+      set('tsPayout', `Rs. ${o.sellerPayout.toLocaleString()}`);
+      renderTripControls();
+      const overlay = document.getElementById('tripSummaryOverlay');
+      const sheet = document.getElementById('tripSummarySheet');
+      overlay.classList.remove('hidden');
+      requestAnimationFrame(() => sheet.classList.remove('translate-y-full'));
+    }
+
+    function renderTripControls() {
+      const stars = document.getElementById('tsStars');
+      stars.innerHTML = [1, 2, 3, 4, 5].map(n =>
+        `<button type="button" onclick="setTripRating(${n})" class="${n <= tripDraft.rating ? 'text-amber-400' : 'text-slate-300'} hover:scale-110 transition" aria-label="${n} star"><i class="fa-solid fa-star"></i></button>`
+      ).join('');
+      document.getElementById('tsStarLabel').textContent = STAR_LABELS[tripDraft.rating] || 'Tap a star to rate';
+
+      document.getElementById('tsTags').innerHTML = RATING_TAGS.map(t => {
+        const on = tripDraft.tags.includes(t);
+        return `<button type="button" onclick="toggleTripTag('${t}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition ${on ? 'bg-brand text-white border-brand' : 'bg-white text-slate-700 border-blue-200'}">${t}</button>`;
+      }).join('');
+
+      document.getElementById('tsTips').innerHTML = TIP_OPTIONS.map(v =>
+        `<button type="button" onclick="setTripTip(${v})" class="py-2 rounded-xl text-xs font-bold border transition ${tripDraft.tip === v ? 'bg-brand text-white border-brand' : 'bg-white text-slate-700 border-blue-200'}">${v === 0 ? 'No tip' : 'Rs. ' + v}</button>`
+      ).join('');
+      document.getElementById('tsTipLine').textContent = `Rs. ${tripDraft.tip.toLocaleString()}`;
+    }
+
+    function setTripRating(n) { tripDraft.rating = n; renderTripControls(); }
+    function setTripTip(v) { tripDraft.tip = v; renderTripControls(); }
+    function toggleTripTag(t) {
+      tripDraft.tags = tripDraft.tags.includes(t) ? tripDraft.tags.filter(x => x !== t) : [...tripDraft.tags, t];
+      renderTripControls();
+    }
+
+    async function closeTripSummary(submit) {
+      const overlay = document.getElementById('tripSummaryOverlay');
+      const sheet = document.getElementById('tripSummarySheet');
+      const o = orders.find(x => x.id === tripDraft.orderId);
+      if (submit && o) {
+        if (!tripDraft.rating) { showAlert('Please tap a star to rate your cleaner, or press Skip.', 'warning'); return; }
+        o.rating = tripDraft.rating;
+        o.tip = tripDraft.tip;
+        o.ratingTags = tripDraft.tags.slice();
+        await syncOrderToSupabase(o);
+        renderAll();
+        showAlert(`Thanks! You rated ${o.cleanerName} ${o.rating}/5${o.tip ? ' and tipped Rs. ' + o.tip : ''}.`, 'success');
+      }
+      sheet.classList.add('translate-y-full');
+      setTimeout(() => overlay.classList.add('hidden'), 250);
+    }
+
+    function cleanerAverageRating(cleanerId) {
+      const rated = orders.filter(o => o.cleanerId === cleanerId && o.rating > 0);
+      if (!rated.length) return null;
+      return (rated.reduce((s, o) => s + o.rating, 0) / rated.length).toFixed(1);
+    }
+
+    function showAlert(message, type = 'info') {
+      const banner = document.getElementById('alertBanner');
+      const box = document.getElementById('alertBannerBox');
+      const icon = document.getElementById('alertBannerIcon');
+      const text = document.getElementById('alertBannerText');
+
+      if (!banner || !box || !icon || !text) return;
+      text.textContent = message;
+      banner.classList.remove('hidden');
+
+      if (type === 'success') {
+        box.className = 'rounded-2xl border px-4 py-3 text-sm font-medium flex items-center justify-between gap-3 bg-brand text-white border-brand';
+        icon.className = 'fa-solid fa-circle-check text-white';
+      } else if (type === 'warning') {
+        box.className = 'rounded-2xl border px-4 py-3 text-sm font-medium flex items-center justify-between gap-3 bg-brand-light border-brand text-slate-900';
+        icon.className = 'fa-solid fa-circle-exclamation text-brand';
+      } else {
+        box.className = 'rounded-2xl border px-4 py-3 text-sm font-medium flex items-center justify-between gap-3 bg-brand-light border-blue-200 text-slate-900';
+        icon.className = 'fa-solid fa-circle-info text-brand';
+      }
+    }
+
+    function hideAlertBanner() {
+      const banner = document.getElementById('alertBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      populateLocationSelects();
+      initSriLankaMap();
+      updateSessionPill();
+      await loadInitialData();
+      renderAll();
+      refreshSelectedCleanerRoadRoute();
+    });
+
+    document.addEventListener('click', (ev) => {
+      const searchInput = document.getElementById('slLocationSearchInput');
+      const resultsBox = document.getElementById('slLocationSearchResults');
+      if (!searchInput || !resultsBox) return;
+      if (!searchInput.contains(ev.target) && !resultsBox.contains(ev.target)) {
+        resultsBox.classList.add('hidden');
+      }
+    });
+  </script>
+
+  <!-- PICKME-STYLE TRIP SUMMARY: RECEIPT + RATING + TIP -->
+  <div id="tripSummaryOverlay" class="hidden fixed inset-0 z-[2000] bg-slate-900/50 flex items-end sm:items-center justify-center">
+    <div id="tripSummarySheet" class="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto transition-transform duration-300 translate-y-full sm:translate-y-0">
+      <div class="w-10 h-1.5 rounded-full bg-slate-200 mx-auto mt-2.5 sm:hidden"></div>
+      <div class="px-5 pt-4 pb-5 space-y-4">
+        <div class="text-center">
+          <div class="w-14 h-14 rounded-full bg-brand text-white flex items-center justify-center mx-auto text-2xl"><i class="fa-solid fa-circle-check"></i></div>
+          <h2 class="text-lg font-extrabold text-slate-900 mt-2">Job Completed</h2>
+          <div class="text-xs text-slate-500"><span id="tsOrderId"></span> • <span id="tsService"></span></div>
+        </div>
+
+        <div class="rounded-2xl border border-blue-100 bg-brand-light/50 p-4 text-center">
+          <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Total to pay</div>
+          <div id="tsTotal" class="text-3xl font-extrabold text-brand mt-0.5">Rs. 0</div>
+          <div class="text-xs text-slate-600 mt-0.5">Paid by <strong id="tsPayMethod">Cash</strong></div>
+        </div>
+
+        <div class="text-xs space-y-1.5 border-b border-dashed border-blue-200 pb-3">
+          <div class="flex justify-between"><span class="text-slate-500">Cleaner</span><strong id="tsCleaner"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Location</span><strong id="tsArea" class="text-right"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Duration</span><strong id="tsHours"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Distance</span><strong id="tsDistance"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Service fee (20%)</span><strong id="tsFee"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Cleaner earns (80%)</span><strong id="tsPayout"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Tip</span><strong id="tsTipLine">Rs. 0</strong></div>
+        </div>
+
+        <div class="text-center">
+          <div class="text-sm font-bold text-slate-900">How was <span id="tsCleanerName"></span>?</div>
+          <div id="tsStars" class="flex justify-center gap-1.5 mt-2 text-3xl text-slate-300"></div>
+          <div id="tsStarLabel" class="text-xs font-semibold text-slate-500 mt-1 h-4"></div>
+        </div>
+
+        <div id="tsTags" class="flex flex-wrap justify-center gap-2"></div>
+
+        <div>
+          <div class="text-xs font-bold text-slate-700 mb-1.5">Add a tip (goes 100% to cleaner)</div>
+          <div id="tsTips" class="grid grid-cols-4 gap-2"></div>
+        </div>
+
+        <div class="flex gap-2 pt-1">
+          <button type="button" onclick="closeTripSummary(false)" class="flex-1 py-3 rounded-xl border border-blue-200 text-slate-700 text-sm font-bold">Skip</button>
+          <button type="button" onclick="closeTripSummary(true)" class="flex-[2] py-3 rounded-xl bg-brand hover:bg-brand-dark text-white text-sm font-bold">Submit</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
