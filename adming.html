@@ -1,0 +1,313 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanMe.lk - Admin Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f1f5f9;color:#0f172a}
+.card{background:white;border:1px solid #dbeafe;border-radius:16px;padding:20px}
+.btn{background:#2563eb;color:white;padding:11px 18px;border-radius:10px;font-weight:bold}
+input{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;margin-top:6px}
+.item{padding:14px;border:1px solid #dbeafe;border-radius:12px;margin-top:10px;background:#f8fbff;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginPage" class="min-h-screen flex items-center justify-center p-5">
+<div class="card w-full max-w-md shadow-xl">
+<h1 class="text-3xl font-extrabold text-blue-600 text-center">CleanMe.lk</h1>
+<p class="text-center text-slate-500 mt-2">Admin Control Panel</p>
+
+<form id="loginForm" class="mt-8 space-y-4">
+<div>
+<label class="font-bold text-sm">Admin Email</label>
+<input id="email" type="email" required placeholder="Admin email">
+</div>
+<div>
+<label class="font-bold text-sm">Password</label>
+<input id="password" type="password" required placeholder="Password">
+</div>
+<button class="btn w-full" type="submit">LOGIN TO DASHBOARD</button>
+<p id="loginError" class="text-red-600 text-sm text-center"></p>
+</form>
+</div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="hidden">
+<header class="bg-slate-950 text-white p-5">
+<div class="max-w-7xl mx-auto flex justify-between items-center gap-3">
+<div>
+<h1 class="text-2xl font-extrabold">CleanMe.lk Admin</h1>
+<p class="text-slate-400 text-sm">Management Dashboard</p>
+</div>
+<button onclick="logout()" class="bg-red-500 px-4 py-2 rounded-lg font-bold">Logout</button>
+</div>
+</header>
+
+<main class="max-w-7xl mx-auto p-5 space-y-6">
+
+<div class="flex flex-wrap justify-between items-center gap-3">
+<div>
+<h2 class="text-2xl font-bold">Dashboard Overview</h2>
+<p id="syncStatus" class="text-sm text-slate-500">Connecting...</p>
+</div>
+<button onclick="loadData()" class="btn">↻ Refresh Data</button>
+</div>
+
+<!-- SUMMARY -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+<div class="card">
+<p class="text-sm text-slate-500">Registered Cleaners</p>
+<h2 id="totalCleaners" class="text-3xl font-extrabold mt-2">0</h2>
+</div>
+<div class="card">
+<p class="text-sm text-slate-500">Registration Fees</p>
+<h2 id="registrationFees" class="text-2xl font-extrabold text-blue-600 mt-2">Rs. 0</h2>
+</div>
+<div class="card">
+<p class="text-sm text-slate-500">20% Commission</p>
+<h2 id="totalCommission" class="text-2xl font-extrabold text-blue-600 mt-2">Rs. 0</h2>
+</div>
+<div class="card">
+<p class="text-sm text-slate-500">Cash Orders Total</p>
+<h2 id="cashTotal" class="text-2xl font-extrabold mt-2">Rs. 0</h2>
+</div>
+<div class="card">
+<p class="text-sm text-slate-500">Cash Commission</p>
+<h2 id="cashCommission" class="text-2xl font-extrabold text-blue-600 mt-2">Rs. 0</h2>
+</div>
+</div>
+
+<!-- CASH ORDERS -->
+<section class="card">
+<div class="flex justify-between items-center flex-wrap gap-2">
+<h2 class="text-xl font-bold">💵 Cash Payments Only</h2>
+<span id="cashCount" class="text-blue-600 font-bold">0 Orders</span>
+</div>
+<div id="cashOrders" class="mt-4"></div>
+</section>
+
+<!-- ALL ORDERS -->
+<section class="card">
+<h2 class="text-xl font-bold">📦 All Orders (Cash + Card)</h2>
+<div id="allOrders" class="mt-4"></div>
+</section>
+
+<!-- CLEANERS -->
+<section class="card">
+<h2 class="text-xl font-bold">🧹 Registered Cleaners</h2>
+<div id="cleaners" class="mt-4"></div>
+</section>
+
+</main>
+</div>
+
+<script>
+// SUPABASE CONFIGURATION - SAME AS YOUR WEBSITE
+const SUPABASE_URL = 'https://ijpbugqhkbxgsirptdbh.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_IdRv3VZ_n0ACSQGgGi2RhQ_nyIHSv6E';
+
+const db = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+// Original website login credentials
+const ADMIN_EMAIL = 'admin@cleanme.lk';
+const ADMIN_PASSWORD = 'admin123';
+
+let cleanersData = [];
+let ordersData = [];
+
+const money = n => 'Rs. ' + Number(n || 0).toLocaleString('en-US');
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;',
+    '"':'&quot;', "'":'&#39;'
+  })[c]);
+}
+
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const email = document.getElementById('email').value.trim();
+  const pass = document.getElementById('password').value;
+
+  if(email === ADMIN_EMAIL && pass === ADMIN_PASSWORD) {
+    sessionStorage.setItem('cleanme_admin', 'true');
+    openDashboard();
+  } else {
+    document.getElementById('loginError').textContent =
+      'Invalid email or password!';
+  }
+});
+
+function openDashboard() {
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  loadData();
+}
+
+function logout() {
+  sessionStorage.removeItem('cleanme_admin');
+  location.reload();
+}
+
+function emptyMessage(text) {
+  return `<p class="text-slate-500 py-4">${escapeHTML(text)}</p>`;
+}
+
+async function loadData() {
+  const status = document.getElementById('syncStatus');
+  status.textContent = 'Loading Supabase data...';
+
+  try {
+    const [cleanerResult, orderResult] = await Promise.all([
+      db.from('cleaners').select('*').order('created_at', {ascending:false}),
+      db.from('cleaning_orders').select('*').order('created_at', {ascending:false})
+    ]);
+
+    if(cleanerResult.error) throw cleanerResult.error;
+    if(orderResult.error) throw orderResult.error;
+
+    cleanersData = cleanerResult.data || [];
+    ordersData = orderResult.data || [];
+
+    renderDashboard();
+    status.textContent = '● Supabase Connected';
+    status.className = 'text-sm text-green-600 font-bold';
+
+  } catch(error) {
+    console.error(error);
+    status.textContent = 'Database Error: ' + error.message;
+    status.className = 'text-sm text-red-600 font-bold';
+  }
+}
+
+function renderDashboard() {
+  const cleaners = cleanersData;
+  const orders = ordersData;
+
+  const completed = orders.filter(o => o.status === 'Completed');
+  const cash = orders.filter(o => o.payment_method === 'Cash');
+
+  const commission = completed.reduce(
+    (sum,o) => sum + Number(o.platform_fee_20 || 0),0
+  );
+
+  const cashGross = cash.reduce(
+    (sum,o) => sum + Number(o.total_amount || 0),0
+  );
+
+  const cashFee = cash.filter(o => o.status === 'Completed').reduce(
+    (sum,o) => sum + Number(o.platform_fee_20 || 0),0
+  );
+
+  document.getElementById('totalCleaners').textContent = cleaners.length;
+  document.getElementById('registrationFees').textContent =
+    money(cleaners.length * 250);
+  document.getElementById('totalCommission').textContent = money(commission);
+  document.getElementById('cashTotal').textContent = money(cashGross);
+  document.getElementById('cashCommission').textContent = money(cashFee);
+  document.getElementById('cashCount').textContent = cash.length + ' Orders';
+
+  // CASH ORDERS
+  document.getElementById('cashOrders').innerHTML = cash.length
+    ? cash.map(o => `
+      <div class="item">
+        <div class="flex justify-between flex-wrap gap-2">
+          <strong>${escapeHTML(o.id)}</strong>
+          <span class="text-blue-600 font-bold">CASH</span>
+        </div>
+        <p class="mt-2">${escapeHTML(o.cleaner_name)} • ${escapeHTML(o.cleaner_id)}</p>
+        <p class="text-sm text-slate-600">
+          ${escapeHTML(o.service)} • ${escapeHTML(o.customer_area)}
+        </p>
+        <p class="mt-2 font-bold">Total: ${money(o.total_amount)}</p>
+        <p class="text-sm">20% Commission: ${money(o.platform_fee_20)}</p>
+        <p class="text-sm">Cleaner 80%: ${money(o.cleaner_payout_80)}</p>
+        <p class="text-sm mt-1">Status: ${escapeHTML(o.status)}</p>
+      </div>
+    `).join('')
+    : emptyMessage('No cash orders found.');
+
+  // ALL ORDERS
+  document.getElementById('allOrders').innerHTML = orders.length
+    ? orders.map(o => `
+      <div class="item">
+        <div class="flex justify-between flex-wrap gap-2">
+          <strong>${escapeHTML(o.id)} • ${escapeHTML(o.cleaner_name)}</strong>
+          <span class="font-bold">${escapeHTML(o.payment_method)} • ${escapeHTML(o.status)}</span>
+        </div>
+        <p class="text-sm text-slate-600 mt-2">
+          ${escapeHTML(o.service)} • ${escapeHTML(o.customer_area)}
+        </p>
+        <p class="mt-2">Total: <strong>${money(o.total_amount)}</strong></p>
+        <p>20% Commission: ${money(o.platform_fee_20)}</p>
+        <p>80% Cleaner Share: ${money(o.cleaner_payout_80)}</p>
+      </div>
+    `).join('')
+    : emptyMessage('No orders found.');
+
+  // REGISTERED CLEANERS
+  document.getElementById('cleaners').innerHTML = cleaners.length
+    ? cleaners.map(c => `
+      <div class="item">
+        <div class="flex justify-between flex-wrap gap-2">
+          <strong>${escapeHTML(c.name)}</strong>
+          <span class="font-bold text-blue-600">${escapeHTML(c.status)}</span>
+        </div>
+        <p class="text-sm text-slate-600 mt-2">
+          Cleaner ID: ${escapeHTML(c.id)}
+        </p>
+        <p class="text-sm">Phone: ${escapeHTML(c.phone)}</p>
+        <p class="text-sm">NIC: ${escapeHTML(c.nic)}</p>
+        <p class="text-sm">Service: ${escapeHTML(c.service)}</p>
+        <p class="text-sm">Area: ${escapeHTML(c.area)}</p>
+        <p class="text-sm">Hourly Rate: ${money(c.hourly_rate)}</p>
+        <div class="border-t mt-3 pt-3">
+          <p class="font-bold text-sm">Bank Details</p>
+          <p class="text-sm">Bank: ${escapeHTML(c.bank_name)}</p>
+          <p class="text-sm">Account: ${escapeHTML(c.account_no)}</p>
+          <p class="text-sm">Holder: ${escapeHTML(c.account_holder)}</p>
+          <p class="text-sm">Registration Fee: ${money(c.reg_fee_paid || 250)}</p>
+        </div>
+      </div>
+    `).join('')
+    : emptyMessage('No cleaners registered.');
+}
+
+// LIVE DATABASE UPDATES
+let realtimeChannel = null;
+
+function startRealtime() {
+  if(realtimeChannel) return;
+
+  realtimeChannel = db.channel('cleanme-admin-live')
+    .on('postgres_changes',
+      {event:'*',schema:'public',table:'cleaners'},
+      () => loadData()
+    )
+    .on('postgres_changes',
+      {event:'*',schema:'public',table:'cleaning_orders'},
+      () => loadData()
+    )
+    .subscribe();
+}
+
+if(sessionStorage.getItem('cleanme_admin') === 'true') {
+  openDashboard();
+}
+
+startRealtime();
+</script>
+
+</body>
+</html>
